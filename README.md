@@ -4,9 +4,9 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 상태 | 기획 (착수 전) |
+| 상태 | 기획 완료 · 데이터셋 확정(MTG-Jamendo) · 구현 착수 |
 | 워크스페이스 | `ai-service-blueprints` 레포 바깥의 형제 디렉터리(독립 레포) |
-| 데이터 | MTG-Jamendo 또는 MagnaTagATune (무드 태그 포함 공개 데이터셋) |
+| 데이터 | MTG-Jamendo 무드/테마 서브셋(상위 10~15 태그 추가 필터) |
 | 모델 | CNN/CRNN, 멜스펙트로그램 입력 |
 | 데모 | Streamlit "곡 선택 → 무드 예측 → 비슷한 무드 추천 5곡" |
 
@@ -17,6 +17,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [`docs/prd.md`](docs/prd.md) | 제품 요구사항 — Phase 0(MVP: 무드 분류 + 콘텐츠 기반 추천) |
+| [`docs/STATUS.md`](docs/STATUS.md) | 진행상황 SSOT — 인프라 표, 다음 작업, 알려진 이슈 |
 | [`docs/prd-phase-1-streaming-integration.md`](docs/prd-phase-1-streaming-integration.md) | Phase 1(외부 스트리밍 서비스 연동) — Draft, 다른 기술 영역이라 분리 |
 
 ## 원천 후보
