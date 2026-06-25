@@ -31,16 +31,24 @@
 ### P0 (7/1 데드라인 내 필수, PRD §20)
 
 - [x] 데이터셋 확정 — MTG-Jamendo 무드/테마 서브셋 채택(§24 Q1 해결, §17.1)
-- [x] PRD 6일 CPU 현실적 범위로 축소 (상위 5~8 태그, 1,000~2,000곡, 30초 세그먼트, CRNN·평가심화는 P1 이월)
-- [ ] 프로젝트 골격 세팅 완료 (.gitignore, requirements.txt, src/ 패키지)
-- [ ] 데이터 수집 모듈 — 메타데이터 다운로드 + 상위 5~8 태그 서브셋 필터(PR-001)
-- [ ] 멜스펙 전처리 파이프라인(PR-001)
-- [ ] 오디오 다운로드(audio-low, 필요분만) — 사용자 로컬 실행(46GB 중 서브셋분)
-- [ ] 단순 CNN 베이스라인 무드 분류 학습(PR-002, CPU)
-- [ ] 임베딩 추출 + 코사인 유사도 Top-5 추천(PR-003)
-- [ ] Streamlit 데모 앱(PR-004)
-- [ ] 학습 노트북(ipynb) 산출(PR-006)
-- [ ] 발표 보고서 PPT 작성(PR-007, 양식 20슬라이드)
+- [x] PRD 6일 CPU 현실적 범위로 축소 (상위 5 태그, 6,725곡, 30초 세그먼트, CRNN·평가심화는 P1 이월)
+- [x] 프로젝트 골격 세팅 완료 (.gitignore, requirements.txt, src/ 패키지)
+- [x] 데이터 수집 모듈 — 메타데이터 다운로드 + 상위 5 태그 서브셋 필터(PR-001)
+- [x] 멜스펙 전처리 파이프라인(PR-001)
+- [ ] 오디오 다운로드 — **일시 중지(5:30 이동), 재시작 필요**
+  - 재시작 명령: `set PYTHONPATH=.&&python -u scripts/download_audio.py --top-n 5 --max-tars 10 --parallel 3 --out data/audio --meta-out artifacts/subset_meta.csv`
+  - 백그라운드 실행: `Start-Process cmd -ArgumentList "/c","logs\run_download.cmd" -WindowStyle Hidden -WorkingDirectory "C:\AGENTS\music-mood-recs"` (logs\run_download.cmd에 위 명령 저장됨)
+  - 부분 TAR 자동 삭제 후 처음부터 받음 (재시도 로직 내장)
+  - 병렬 3개 동시 다운로드, 약 205KB/s, 10 TARs에 약 6.7시간 예상
+  - 완료 후 자동으로 artifacts/subset_meta.csv 저장 (train 438 / val 119 / test 200)
+- [x] 단순 CNN 무드 분류 모델 구현(PR-002) — 합성 데이터로 검증 완료, 실데이터 학습 대기
+- [x] 임베딩 추출 + 코사인 유사도 Top-5 추천 구현(PR-003)
+- [x] Streamlit 데모 앱 구현(PR-004) — 합성 데이터로 HTTP 200 확인
+- [x] 학습 노트북(ipynb) 산출(PR-006) — 19셀, 양식 구조 대응
+- [x] 발표 보고서 PPT 초안(PR-007) — 20슬라이드, 실데이터 결과 슬라이드는 학습 후 갱신
+- [ ] 다운로드 완료 후 실데이터 멜스펙 추출 + CNN 학습
+- [ ] 보고서 PPT에 실제 학습 결과/그래프 삽입
+- [ ] 발표 시연 리허설 + zip 패키징 (이메일 제출)
 
 ### P1 (보고서 "5. 보완사항"으로 서술, 후속 이월)
 
