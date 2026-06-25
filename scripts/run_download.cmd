@@ -9,4 +9,4 @@ REM  "command not found" errors even inside REM lines.)
 cd /d "%~dp0.."
 
 set PYTHONPATH=.
-python -u scripts\download_audio.py --top-n 5 --max-tars 20 --parallel 3 --out data\audio --meta-out artifacts\subset_meta.csv
+python -u scripts\download_audio.py --top-n 5 --max-tars 30 --parallel 3 --out data\audio --meta-out artifacts\subset_meta.csv

@@ -1,0 +1,5 @@
+{
+  "n_mels": 128,
+  "n_classes": 5,
+  "embedding_dim": 64
+}

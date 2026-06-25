@@ -182,7 +182,7 @@ except Exception as exc:
     st.error(f"모델/데이터를 불러오지 못했습니다: {exc}")
     st.info(
         "데모 실행 순서:\n"
-        "1. `python scripts/download_audio.py --top-n 5 --max-tars 10`\n"
+        "1. `python scripts/download_audio.py --top-n 5 --max-tars 30`\n"
         "2. `python scripts/extract_melspecs.py`\n"
         "3. `python scripts/train_cnn.py`\n"
         "4. `streamlit run app.py`\n\n"

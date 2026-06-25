@@ -33,7 +33,12 @@ def inline_module(path: str) -> str:
     source = open(path, encoding="utf-8").read()
     tree = ast.parse(source)
     lines = source.splitlines(keepends=True)
-    parts = []
+    # Consecutive import statements are joined tightly (single newline); any
+    # other statement (def/class/constant) starts a new chunk separated by a
+    # blank-line gap, so inlined imports don't look inconsistently spaced
+    # next to the cell's own hand-written import header.
+    chunks: list[str] = []
+    import_buf: list[str] = []
     for i, node in enumerate(tree.body):
         if i == 0 and isinstance(node, ast.Expr) and isinstance(getattr(node, "value", None), ast.Constant) and isinstance(node.value.value, str):
             continue  # module docstring
@@ -43,8 +48,17 @@ def inline_module(path: str) -> str:
             continue  # internal cross-module ref (e.g. type hints) — already defined by an earlier cell
         decorators = getattr(node, "decorator_list", [])
         start = min([d.lineno for d in decorators] + [node.lineno])
-        parts.append("".join(lines[start - 1 : node.end_lineno]).rstrip("\n"))
-    return "\n\n\n".join(parts) + "\n"
+        text = "".join(lines[start - 1 : node.end_lineno]).rstrip("\n")
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            import_buf.append(text)
+            continue
+        if import_buf:
+            chunks.append("\n".join(import_buf))
+            import_buf = []
+        chunks.append(text)
+    if import_buf:
+        chunks.append("\n".join(import_buf))
+    return "\n\n\n".join(chunks) + "\n"
 
 
 # ===== 1. 개요 및 현황 =====
@@ -95,7 +109,7 @@ code(
     "from concurrent.futures import ThreadPoolExecutor, as_completed\n\n"
     + inline_module("src/data/download_audio.py")
     + "\n"
-    "MAX_TARS = 20\n"
+    "MAX_TARS = 30\n"
     "subset = restrict_subset_to_folders(subset, MAX_TARS)  # 이후 셀(EDA·학습)은 모두 이 제한된 서브셋을 기준으로 한다\n"
     "for s in ['train', 'validation', 'test']:\n"
     "    print(f'{s} (restricted): {len(subset[s])} tracks')\n\n"

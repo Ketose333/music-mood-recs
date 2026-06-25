@@ -36,6 +36,7 @@
 - [x] 데이터 수집 모듈 — 메타데이터 다운로드 + 상위 5 태그 서브셋 필터(PR-001)
 - [x] 멜스펙 전처리 파이프라인(PR-001)
 - [x] 오디오 다운로드 — `--max-tars 20`으로 1,508곡 다운로드+추출 완료(2026-06-25)
+  - **`--max-tars 30`(~2,271곡 예상)으로 증분 확장 진행 중**(2026-06-25 밤) — 다운로드 속도가 예상보다 훨씬 빨라(8분/10TAR) PRD 목표(1,000~2,000곡) 천장을 13% 정도만 넘기는 수준으로 올림. 기존 20개분은 증분 스킵, 21~29 폴더만 추가 다운로드. 기본값을 30으로 통일(`scripts/run_download.cmd`, `scripts/make_notebook.py`의 `MAX_TARS`, `README.md`, `app.py` 안내문, `scripts/make_report.py` 슬라이드 텍스트)
   - 재시작 스크립트: `scripts/run_download.cmd` — `%~dp0` 기준으로 프로젝트 루트를 찾으므로 PC/클론 경로에 무관하게 동작 (절대경로 하드코딩 없음). `logs/`는 통째로 gitignore돼 있어 스크립트는 `scripts/`에 둠(로그 출력 파일만 `logs/`에 씀)
   - 백그라운드 실행(레포 루트에서, PowerShell): `Start-Process cmd -ArgumentList "/c","scripts\run_download.cmd" -WindowStyle Hidden -WorkingDirectory "$PWD" -RedirectStandardOutput "logs\download_stdout.log" -RedirectStandardError "logs\download_stderr.log"`
   - 현재 진행 상황: `--max-tars 20`으로 1,508곡 다운로드+추출 완료(2026-06-25). 초기 버전엔 TAR 멤버명이 `.low.mp3`인데 메타데이터 `PATH`는 `.mp3`라 0/757 추출되는 버그가 있었음(수정 완료, `_extract_subset_from_tar`). 증분 재실행 지원(이미 추출된 폴더는 재다운로드 skip)

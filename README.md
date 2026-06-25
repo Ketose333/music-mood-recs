@@ -32,7 +32,7 @@
 
 ```
 MTG-Jamendo 메타데이터 → 상위 5 태그 서브셋 필터
-  → 오디오 다운로드(audio-low TAR, --max-tars 10)
+  → 오디오 다운로드(audio-low TAR, --max-tars 30)
   → 멜스펙트로그램 추출(30초 세그먼트, log-mel, 128 mels)
   → MoodCNN 학습(BCEWithLogitsLoss, CPU)
   → 임베딩 추출 + 코사인 유사도 Top-5 추천
@@ -45,7 +45,7 @@ MTG-Jamendo 메타데이터 → 상위 5 태그 서브셋 필터
 pip install -r requirements.txt
 
 # 1. 데이터 다운로드 (메타데이터 + 오디오 TAR)
-python scripts/download_audio.py --top-n 5 --max-tars 10
+python scripts/download_audio.py --top-n 5 --max-tars 30
 
 # 2. 멜스펙트로그램 일괄 추출
 python scripts/extract_melspecs.py --audio-dir data/audio --out artifacts/melspecs
