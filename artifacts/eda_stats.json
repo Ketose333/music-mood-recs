@@ -1,0 +1,21 @@
+{
+  "total_train": 3699,
+  "total_val": 1272,
+  "total_test": 1754,
+  "tags": [
+    "happy",
+    "energetic",
+    "relaxing",
+    "film",
+    "dark"
+  ],
+  "tag_counts": {
+    "happy": 927,
+    "energetic": 857,
+    "relaxing": 763,
+    "film": 746,
+    "dark": 620
+  },
+  "duration_mean": 205.7,
+  "duration_median": 191.9
+}

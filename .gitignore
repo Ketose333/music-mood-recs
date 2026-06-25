@@ -5,10 +5,12 @@ __pycache__/
 venv/
 env/
 
-# Data & artifacts (large, downloaded/generated locally — not tracked)
-/data/
-/artifacts/
-/models/
+# Raw audio data (large, downloaded locally — not tracked)
+/data/audio/
+/data/jamendo/
+/data/synth_audio/
+
+# Logs (not source)
 /logs/
 
 # Report / submission artifacts (binary, not source)

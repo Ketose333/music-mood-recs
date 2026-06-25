@@ -1,6 +1,6 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-06-25
+마지막 갱신: 2026-06-25 (Git 추적 정책 검증)
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
@@ -71,6 +71,21 @@
 | 6/29(월) | 노트북(ipynb) 정리, 보고서 PPT 초안 |
 | 6/30(화) | 발표 시연 리허설, 보고서 완성, zip 패키징 |
 | 7/1(수) | 09:00 발표·시연·제출 |
+
+## Git 추적 정책 (2026-06-25 검증)
+
+오디오 다운로드 재개 전, `models/`·`artifacts/` 추적 가능 여부를 점검.
+
+| 항목 | 결과 |
+| --- | --- |
+| `git check-ignore models artifacts` | 무시 대상 아님 (정상 추적 가능) |
+| `.gitignore` | `/data/`, `/artifacts/`, `/models/` 통째 무시 → `/data/audio/`, `/data/jamendo/`, `/data/synth_audio/`만 무시로 좁힘 (artifacts/models은 추적 허용) |
+| `models/cnn_synth/` | `model.pt`(120KB) + `config.json`+`metrics.json`+`tags.json` (합성 모델, 실데이터 학습 전) |
+| `models/` 전체 크기 | 130KB |
+| `artifacts/` 전체 크기 | 9.6MB (합성 멜스펙 15개 + EDA 그래프 2개 + 메타 CSV) |
+| `.gitattributes` (LFS 필터) | **제거함** — git-lfs 바이너리는 설치돼 있으나 이 레포에 `git lfs install`(pre-push 훅) 미실행 상태였음. 이대로 `*.pt` 커밋 시 로컬엔 LFS 포인터로 저장되나 push 시 실제 바이너리가 업로드 안 되어 원격에 깨진 포인터만 남을 위험. 현재 모델·아티팩트 크기가 매우 작아(130KB/9.6MB) LFS 불필요 |
+
+**최종 정책**: Git 직접 추적 유지(LFS 미사용). 추후 실데이터 학습으로 모델/아티팩트가 크게 커지면(예: 수십MB 이상) 그때 `git lfs install` 정식 실행 후 `.gitattributes` 재도입.
 
 ## 알려진 이슈
 
