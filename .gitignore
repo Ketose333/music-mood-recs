@@ -5,8 +5,10 @@ __pycache__/
 venv/
 env/
 
-# Raw audio data (large, downloaded locally — not tracked)
-/data/audio/
+# Raw audio data
+# data/audio/ is now tracked via git-lfs (*.mp3, see .gitattributes) so it can
+# move between PCs without a slow re-download. Metadata cache / synth test
+# data stay untracked (small/throwaway, regenerate fast).
 /data/jamendo/
 /data/synth_audio/
 
