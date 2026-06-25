@@ -88,6 +88,25 @@ code(
     "    print(f'{s}: {len(subset[s])} tracks')\n"
     "subset['train'].head()")
 
+md("오디오 다운로드 — MTG-Jamendo audio-low TAR을 받아 서브셋 트랙만 추출한다. "
+   "이미 추출된 트랙은 건너뛰므로(증분 안전) 재실행해도 다시 받지 않는다.")
+code(
+    "import requests, tarfile\n"
+    "from concurrent.futures import ThreadPoolExecutor, as_completed\n\n"
+    + inline_module("src/data/download_audio.py")
+    + "\n"
+    "MAX_TARS = 20\n"
+    "subset = restrict_subset_to_folders(subset, MAX_TARS)  # 이후 셀(EDA·학습)은 모두 이 제한된 서브셋을 기준으로 한다\n"
+    "for s in ['train', 'validation', 'test']:\n"
+    "    print(f'{s} (restricted): {len(subset[s])} tracks')\n\n"
+    "download_and_extract_subset(subset, 'data/audio', MAX_TARS, parallel=3)\n\n"
+    "subset_meta = pd.concat(\n"
+    "    [subset[s].assign(split=s) for s in ['train', 'validation', 'test']],\n"
+    "    ignore_index=True,\n"
+    ")\n"
+    "subset_meta.to_csv('artifacts/subset_meta.csv', index=False)\n"
+    "print(f'Saved restricted subset metadata ({len(subset_meta)} rows) to artifacts/subset_meta.csv')")
+
 # ===== 4. EDA =====
 md("## 3. 탐색적 데이터 분석 (EDA)\n\n"
    "태그별 분포 및 트랙 길이 분포 확인")
