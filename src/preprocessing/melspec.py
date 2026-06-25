@@ -110,6 +110,46 @@ def load_or_compute_melspec(
     return save_melspec(audio_path, cache_path, cfg)
 
 
+def extract_subset_melspecs(
+    meta_csv: str, audio_dir: str, out_dir: str, cfg: Optional[MelspecConfig] = None
+):
+    """Batch-extract melspecs for every track in a subset metadata CSV.
+
+    Reads TRACK_ID/PATH/DURATION/split columns from ``meta_csv``, skips tracks
+    whose audio file is missing under ``audio_dir``, and caches each
+    melspec under ``out_dir`` (already-cached .npy files are reused). Returns
+    ``(manifest_df, missing_count)``; the caller writes the manifest CSV.
+    """
+    import pandas as pd
+
+    cfg = cfg or MelspecConfig()
+    os.makedirs(out_dir, exist_ok=True)
+    meta = pd.read_csv(meta_csv)
+
+    rows: list[dict] = []
+    missing = 0
+    for _, row in meta.iterrows():
+        rel = row["PATH"]
+        audio_path = os.path.join(audio_dir, rel)
+        if not os.path.exists(audio_path):
+            missing += 1
+            continue
+        cache_path = os.path.join(out_dir, rel.replace("/", os.sep).removesuffix(".mp3") + ".npy")
+        mel = load_or_compute_melspec(audio_path, cache_path, cfg)
+        rows.append(
+            {
+                "TRACK_ID": row["TRACK_ID"],
+                "PATH": rel,
+                "DURATION": row["DURATION"],
+                "split": row["split"],
+                "npy_path": cache_path,
+                "n_mels": mel.shape[0],
+                "n_frames": mel.shape[1],
+            }
+        )
+    return pd.DataFrame(rows), missing
+
+
 def validate_melspec(mel: np.ndarray, cfg: Optional[MelspecConfig] = None) -> bool:
     """Check shape and dtype match the config (used in tests / inference guards)."""
     cfg = cfg or MelspecConfig()

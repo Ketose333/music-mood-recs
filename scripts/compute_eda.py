@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.data.jamendo import build_subset
+from src.data.load_jamendo import build_subset
 
 
 def main() -> None:
@@ -87,9 +87,11 @@ def main() -> None:
         "duration_median": round(float(durations.median()), 1),
     }
     import json
-    with open("artifacts/eda_stats.json", "w", encoding="utf-8") as f:
+    import os
+    os.makedirs("models/eda", exist_ok=True)
+    with open("models/eda/stats.json", "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
-    print("saved artifacts/eda_stats.json")
+    print("saved models/eda/stats.json")
     print(f"summary: {stats['total_train']} train, {stats['total_val']} val, {stats['total_test']} test")
 
 

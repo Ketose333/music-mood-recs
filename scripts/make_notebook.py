@@ -1,3 +1,17 @@
+"""Generate submission/music_mood_recs.ipynb.
+
+The notebook must not import the src package (mirrors the app.py constraint —
+see scripts/sync_standalone_app.py) so it stays a single self-contained
+deliverable. inline_module() pulls each src/ file's actual source (minus its
+docstring and `from __future__` import) into the relevant cell at generation
+time, so src/ stays the single source of truth and nothing is hand-duplicated.
+
+Usage:
+  python scripts/make_notebook.py
+"""
+
+import ast
+
 import nbformat as nbf
 
 nb = nbf.v4.new_notebook()
@@ -10,6 +24,27 @@ def md(text):
 
 def code(text):
     cells.append(nbf.v4.new_code_cell(text))
+
+
+def inline_module(path: str) -> str:
+    """Return a module's body (functions/classes/constants/imports), with its
+    docstring and `from __future__` import stripped, for embedding directly in
+    a notebook cell."""
+    source = open(path, encoding="utf-8").read()
+    tree = ast.parse(source)
+    lines = source.splitlines(keepends=True)
+    parts = []
+    for i, node in enumerate(tree.body):
+        if i == 0 and isinstance(node, ast.Expr) and isinstance(getattr(node, "value", None), ast.Constant) and isinstance(node.value.value, str):
+            continue  # module docstring
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            continue
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("src."):
+            continue  # internal cross-module ref (e.g. type hints) — already defined by an earlier cell
+        decorators = getattr(node, "decorator_list", [])
+        start = min([d.lineno for d in decorators] + [node.lineno])
+        parts.append("".join(lines[start - 1 : node.end_lineno]).rstrip("\n"))
+    return "\n\n\n".join(parts) + "\n"
 
 
 # ===== 1. 개요 및 현황 =====
@@ -35,9 +70,17 @@ md("## 2. 데이터 수집\n\n"
    "MTG-Jamendo 메타데이터 다운로드 + 상위 5 태그 서브셋 필터링")
 code(
     "import sys, os\n"
+    "# 노트북이 submission/ 안에 있어 Jupyter cwd가 거기로 잡힐 수 있음 -> 레포 루트로 이동\n"
+    "if not os.path.isdir('data') and os.path.isdir(os.path.join('..', 'data')):\n"
+    "    os.chdir('..')\n"
     "sys.path.insert(0, os.getcwd())\n"
-    "os.environ.setdefault('PYTHONPATH', os.getcwd())\n\n"
-    "from src.data.jamendo import build_subset\n\n"
+    "print('cwd:', os.getcwd())\n\n"
+    "import urllib.request\n"
+    "from collections import Counter\n"
+    "from typing import Optional\n"
+    "import pandas as pd\n\n"
+    + inline_module("src/data/load_jamendo.py")
+    + "\n"
     "subset = build_subset(top_n=5, dest_dir='data/jamendo')\n"
     "tags = subset['tags']\n"
     "print('tags:', tags)\n"
@@ -65,30 +108,39 @@ code(
 
 # ===== 5. 전처리 =====
 md("## 4. 데이터 전처리 - 멜스펙트로그램 추출\n\n"
-   "각 트랙에서 30초 세그먼트를 잘라 log-mel spectrogram 계산")
+   "각 트랙에서 30초 세그먼트를 잘라 log-mel spectrogram 계산. "
+   "`data/audio/`의 다운로드된 mp3에서 직접 추출하며, 이미 계산된 트랙은 캐시를 재사용한다(증분 안전).")
 code(
-    "from src.preprocess.melspec import MelspecConfig, extract_melspec\n"
+    "import os\n"
+    "from dataclasses import dataclass\n"
+    "from typing import Optional\n"
+    "import librosa\n"
     "import numpy as np\n\n"
+    + inline_module("src/preprocessing/melspec.py")
+    + "\n"
     "cfg = MelspecConfig()\n"
     "print(f'sr={cfg.sr}, n_mels={cfg.n_mels}, segment={cfg.segment_seconds}s, frames={cfg.expected_frames}')\n\n"
-    "import os, glob\n\n"
-    "mel_files = glob.glob('artifacts/melspecs/**/*.npy', recursive=True)\n"
-    "if mel_files:\n"
-    "    mel = np.load(mel_files[0])\n"
-    "    print('melspec shape:', mel.shape)\n"
-    "    plt.imshow(mel, aspect='auto', origin='lower', cmap='magma')\n"
-    "    plt.title('log-mel spectrogram example')\n"
-    "    plt.xlabel('time frames'); plt.ylabel('mel bins')\n"
-    "    plt.show()\n"
-    "else:\n"
-    "    print('추출된 멜스펙이 없습니다. scripts/extract_melspecs.py를 먼저 실행하세요.')")
+    "MANIFEST_CSV = 'artifacts/melspec_manifest.csv'\n"
+    "melspec_manifest, missing = extract_subset_melspecs(\n"
+    "    meta_csv='artifacts/subset_meta.csv', audio_dir='data/audio', out_dir='artifacts/melspecs', cfg=cfg)\n"
+    "melspec_manifest.to_csv(MANIFEST_CSV, index=False)\n"
+    "print(f'Manifest: {len(melspec_manifest)} tracks -> {MANIFEST_CSV} (missing audio: {missing})')\n\n"
+    "example_mel = np.load(melspec_manifest.iloc[0]['npy_path'])\n"
+    "print('melspec shape:', example_mel.shape)\n"
+    "plt.imshow(example_mel, aspect='auto', origin='lower', cmap='magma')\n"
+    "plt.title('log-mel spectrogram example')\n"
+    "plt.xlabel('time frames'); plt.ylabel('mel bins')\n"
+    "plt.show()")
 
 # ===== 6. 모델 정의 =====
 md("## 5. 모델 정의 및 컴파일\n\n"
    "MoodCNN: 3 conv blocks + embedding head + linear classifier")
 code(
-    "from src.models.cnn import CNNConfig, MoodCNN, count_parameters\n"
-    "import torch\n\n"
+    "from dataclasses import dataclass\n"
+    "import torch\n"
+    "import torch.nn as nn\n\n"
+    + inline_module("src/models/cnn.py")
+    + "\n"
     "cfg_model = CNNConfig(n_mels=128, n_classes=len(tags), embedding_dim=64)\n"
     "model = MoodCNN(cfg_model)\n"
     "print(model)\n"
@@ -100,8 +152,19 @@ code(
 md("## 6. 모델 학습\n\n"
    "BCEWithLogitsLoss로 멀티라벨 무드 분류 학습")
 code(
-    "from src.data.dataset import MelspecDataset\n"
-    "from torch.utils.data import DataLoader\n\n"
+    "import os\n"
+    "import json\n"
+    "from typing import Sequence\n"
+    "import numpy as np\n"
+    "import pandas as pd\n"
+    "import torch\n"
+    "from torch.utils.data import Dataset, DataLoader\n"
+    "from sklearn.metrics import f1_score, roc_auc_score\n\n"
+    + inline_module("src/data/dataset.py")
+    + "\n"
+    + inline_module("src/evaluation/metrics.py")
+    + "\n"
+    "MODEL_OUT = 'models/cnn'\n"
     "manifest = 'artifacts/melspec_manifest.csv'\n"
     "subset_meta = 'artifacts/subset_meta.csv'\n"
     "if not os.path.exists(manifest) or not os.path.exists(subset_meta):\n"
@@ -114,8 +177,10 @@ code(
     "if train_ds is not None:\n"
     "    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=0)\n"
     "    val_loader = DataLoader(val_ds, batch_size=32, shuffle=False, num_workers=0)\n\n"
+    "    os.makedirs(MODEL_OUT, exist_ok=True)\n"
     "    epochs = 15\n"
     "    history = []\n"
+    "    best_val_f1 = -1.0\n"
     "    for epoch in range(1, epochs+1):\n"
     "        model.train()\n"
     "        train_loss = 0.0\n"
@@ -126,10 +191,31 @@ code(
     "            loss.backward()\n"
     "            optimizer.step()\n"
     "            train_loss += loss.item() * x.size(0)\n"
-    "        train_loss /= len(train_ds)\n"
-    "        print(f'epoch {epoch:02d}/{epochs} train_loss={train_loss:.4f}')\n"
-    "        history.append({'epoch': epoch, 'train_loss': round(train_loss,4)})\n"
-    "    print('학습 완료')")
+    "        train_loss /= len(train_ds)\n\n"
+    "        model.eval()\n"
+    "        all_logits, all_labels, val_loss = [], [], 0.0\n"
+    "        with torch.no_grad():\n"
+    "            for x, y, _ in val_loader:\n"
+    "                logits = model(x)\n"
+    "                val_loss += criterion(logits, y).item() * x.size(0)\n"
+    "                all_logits.append(logits.numpy())\n"
+    "                all_labels.append(y.numpy())\n"
+    "        val_metrics = compute_metrics(np.concatenate(all_logits), np.concatenate(all_labels))\n"
+    "        val_metrics['loss'] = round(val_loss / len(val_ds), 4)\n\n"
+    "        print(f'epoch {epoch:02d}/{epochs} train_loss={train_loss:.4f} val_loss={val_metrics[\"loss\"]:.4f} '\n"
+    "              f'val_f1_micro={val_metrics[\"f1_micro\"]:.4f} val_acc={val_metrics[\"accuracy\"]:.4f}')\n"
+    "        history.append({'epoch': epoch, 'train_loss': round(train_loss, 4), **val_metrics})\n"
+    "        if val_metrics['f1_micro'] > best_val_f1:\n"
+    "            best_val_f1 = val_metrics['f1_micro']\n"
+    "            torch.save(model.state_dict(), os.path.join(MODEL_OUT, 'model.pt'))\n"
+    "            print(f'  -> saved best model (val_f1_micro={best_val_f1:.4f})')\n\n"
+    "    with open(os.path.join(MODEL_OUT, 'tags.json'), 'w', encoding='utf-8') as f:\n"
+    "        json.dump(tags, f, ensure_ascii=False, indent=2)\n"
+    "    with open(os.path.join(MODEL_OUT, 'config.json'), 'w', encoding='utf-8') as f:\n"
+    "        json.dump({'n_mels': cfg_model.n_mels, 'n_classes': cfg_model.n_classes, 'embedding_dim': cfg_model.embedding_dim}, f, indent=2)\n"
+    "    with open(os.path.join(MODEL_OUT, 'metrics.json'), 'w', encoding='utf-8') as f:\n"
+    "        json.dump({'best_val_f1_micro': best_val_f1, 'history': history, 'tags': tags}, f, ensure_ascii=False, indent=2)\n"
+    "    print(f'학습 완료. Best val F1(micro)={best_val_f1:.4f}. Artifacts in {MODEL_OUT}')")
 
 # ===== 8. 학습 과정 시각화 =====
 md("## 7. 학습 과정 시각화\n\n"
@@ -155,7 +241,10 @@ code(
     "import os\n"
     "import pandas as pd\n"
     "import numpy as np\n"
-    "from src.recommend.similar import extract_embeddings, top_k_similar\n\n"
+    "import torch\n"
+    "from sklearn.metrics.pairwise import cosine_similarity\n\n"
+    + inline_module("src/recommend/similar.py")
+    + "\n"
     "model_path = 'models/cnn/model.pt'\n"
     "manifest = 'artifacts/melspec_manifest.csv'\n"
     "if not os.path.exists(model_path):\n"

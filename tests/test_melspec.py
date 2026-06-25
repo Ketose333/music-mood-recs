@@ -1,4 +1,4 @@
-"""Tests for src.preprocess.melspec — uses synthesized WAV files (no network)."""
+"""Tests for src.preprocessing.melspec — uses synthesized WAV files (no network)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ import os
 import numpy as np
 import soundfile as sf
 
-from src.preprocess.melspec import (
+from src.preprocessing.melspec import (
     MelspecConfig,
     compute_melspec,
     extract_melspec,
+    extract_subset_melspecs,
     load_or_compute_melspec,
     load_segment,
     validate_melspec,
@@ -75,3 +76,26 @@ def test_validate_melspec_rejects_wrong_shape():
     cfg = MelspecConfig(n_mels=128)
     bad = np.zeros((64, 100), dtype=np.float32)
     assert not validate_melspec(bad, cfg)
+
+
+def test_extract_subset_melspecs_skips_missing_and_builds_manifest(tmp_path):
+    cfg = MelspecConfig(sr=22050, segment_seconds=1.0, n_mels=64)
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
+    _write_wav(str(audio_dir / "present.wav"), seconds=1.2, sr=cfg.sr)
+
+    meta_csv = tmp_path / "subset_meta.csv"
+    meta_csv.write_text(
+        "TRACK_ID,PATH,DURATION,split\n"
+        "1,present.wav,1.2,train\n"
+        "2,missing.wav,1.2,train\n",
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "melspecs"
+    manifest, missing = extract_subset_melspecs(str(meta_csv), str(audio_dir), str(out_dir), cfg)
+
+    assert missing == 1
+    assert len(manifest) == 1
+    assert manifest.iloc[0]["TRACK_ID"] == 1
+    assert os.path.exists(manifest.iloc[0]["npy_path"])

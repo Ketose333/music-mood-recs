@@ -15,21 +15,9 @@ import argparse
 import os
 import sys
 
-import numpy as np
-import pandas as pd
-
-from src.preprocess.melspec import MelspecConfig, load_or_compute_melspec
+from src.preprocessing.melspec import MelspecConfig, extract_subset_melspecs
 
 _DEFAULT_CFG = MelspecConfig()
-
-
-def _audio_path(audio_dir: str, rel_path: str) -> str:
-    return os.path.join(audio_dir, rel_path)
-
-
-def _cache_path(out_dir: str, rel_path: str) -> str:
-    base = rel_path.replace("/", os.sep).removesuffix(".mp3")
-    return os.path.join(out_dir, base + ".npy")
 
 
 def main() -> int:
@@ -43,43 +31,15 @@ def main() -> int:
     parser.add_argument("--segment-seconds", type=float, default=_DEFAULT_CFG.segment_seconds)
     args = parser.parse_args()
 
-    os.makedirs(args.out, exist_ok=True)
     os.makedirs(os.path.dirname(args.manifest), exist_ok=True)
 
     cfg = MelspecConfig(
         sr=args.sr, n_mels=args.n_mels, segment_seconds=args.segment_seconds
     )
 
-    meta = pd.read_csv(args.meta)
-    print(f"Loaded {len(meta)} rows from {args.meta}")
-
-    rows: list[dict] = []
-    missing = 0
-    for i, row in meta.iterrows():
-        rel = row["PATH"]
-        audio = _audio_path(args.audio_dir, rel)
-        if not os.path.exists(audio):
-            missing += 1
-            continue
-        cache = _cache_path(args.out, rel)
-        mel = load_or_compute_melspec(audio, cache, cfg)
-        rows.append(
-            {
-                "TRACK_ID": row["TRACK_ID"],
-                "PATH": rel,
-                "DURATION": row["DURATION"],
-                "split": row["split"],
-                "npy_path": cache,
-                "n_mels": mel.shape[0],
-                "n_frames": mel.shape[1],
-            }
-        )
-        if (i + 1) % 500 == 0:
-            print(f"  processed {i + 1}/{len(meta)} (missing {missing})")
-
-    manifest = pd.DataFrame(rows)
+    manifest, missing = extract_subset_melspecs(args.meta, args.audio_dir, args.out, cfg)
     manifest.to_csv(args.manifest, index=False)
-    print(f"\nManifest: {len(manifest)} tracks -> {args.manifest}")
+    print(f"Manifest: {len(manifest)} tracks -> {args.manifest}")
     print(f"Missing audio files skipped: {missing}")
     return 0
 

@@ -5,7 +5,7 @@ tracks are spread across all folders, so selective TAR download only helps
 when we restrict the subset to a prefix of folders (``--max-tars``).
 
 Workflow:
-  1. Build the top-N tag subset from split-0 metadata (src.data.jamendo).
+  1. Build the top-N tag subset from split-0 metadata (src.data.load_jamendo).
   2. Download TARs 00..max_tars-1 from the MTG-fast mirror, one at a time.
   3. Extract only tracks whose PATH is in the subset; delete the TAR after.
   4. Save the restricted subset metadata to artifacts/subset_meta.csv so the
@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import requests
 
-from src.data.jamendo import build_subset
+from src.data.load_jamendo import build_subset
 
 _MIRROR = "https://cdn.freesound.org/mtg-jamendo/autotagging_moodtheme/audio-low"
 _TAR_TEMPLATE = "autotagging_moodtheme_audio-low-{idx:02d}.tar"

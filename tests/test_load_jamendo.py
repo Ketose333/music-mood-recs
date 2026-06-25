@@ -1,4 +1,4 @@
-"""Tests for src.data.jamendo — subset selection logic with synthetic TSVs.
+"""Tests for src.data.load_jamendo — subset selection logic with synthetic TSVs.
 
 The download paths are exercised via dependency injection: we call the pure
 parsing/filtering helpers on hand-built DataFrames so no network access is
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.data.jamendo import (
+from src.data.load_jamendo import (
     _COLUMNS,
     _mood_tags,
     _parse_tags,
