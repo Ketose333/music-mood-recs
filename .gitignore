@@ -8,6 +8,8 @@ env/
 # Data & artifacts (large, downloaded/generated locally — not tracked)
 /data/
 /artifacts/
+/models/
+/logs/
 
 # Report / submission artifacts (binary, not source)
 *.pptx
