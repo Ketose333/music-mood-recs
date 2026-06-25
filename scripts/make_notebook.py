@@ -192,6 +192,8 @@ nb['cells'] = cells
 nb['metadata']['kernelspec'] = {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}
 nb['metadata']['language_info'] = {'name': 'python', 'version': '3.10'}
 
-with open('notebooks/music_mood_recs.ipynb', 'w', encoding='utf-8') as f:
+import os
+os.makedirs('submission', exist_ok=True)
+with open('submission/music_mood_recs.ipynb', 'w', encoding='utf-8') as f:
     nbf.write(nb, f)
-print('wrote notebooks/music_mood_recs.ipynb with', len(cells), 'cells')
+print('wrote submission/music_mood_recs.ipynb with', len(cells), 'cells')

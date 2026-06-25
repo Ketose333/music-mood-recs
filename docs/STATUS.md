@@ -96,7 +96,7 @@
 | --- | --- | --- |
 | `artifacts/` | `models/eda/` | EDA 그래프·멜스펙 매니페스트·서브셋 메타를 모델 산출물과 분리 보관(오디오 도메인은 전처리 중간산물이 많아 분리가 합리적) |
 | `logs/` | 없음 | 오디오 다운로드(수시간 소요, 백그라운드 실행)는 review-sentiment 도메인(텍스트)에 없는 작업 — 도메인 특성상 신규 |
-| `notebooks/` | (레포 내 미추적) | 과제 제출물(ipynb) 보관 위치를 명시적으로 분리 |
+| `submission/` | `submission/`(review-sentiment도 동일하게 도입, 2026-06-25) | 제출용 ipynb·app.py 사본을 레포 내부에 두는 정본 위치(외부 절대경로 의존 없음). `scripts/make_notebook.py`가 직접 씀, `scripts/package_submission.py`가 app.py를 동기화 |
 
 또한 보완 완료:
 - `packages.txt` 추가(`ffmpeg`) — MTG-Jamendo 오디오가 mp3 포맷이라 Streamlit Cloud의 `librosa`/`soundfile` mp3 디코딩 안정성 확보 목적(review-sentiment의 `packages.txt`=`default-jdk`와 같은 배포 안전장치 패턴).
