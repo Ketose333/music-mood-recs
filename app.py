@@ -85,7 +85,14 @@ try:
     embeddings = compute_all_embeddings(model, mels)
 except Exception as exc:
     st.error(f"모델/데이터를 불러오지 못했습니다: {exc}")
-    st.info("학습을 먼저 실행해주세요: python scripts/train_cnn.py")
+    st.info(
+        "데모 실행 순서:\n"
+        "1. `python scripts/download_audio.py --top-n 5 --max-tars 10`\n"
+        "2. `python scripts/extract_melspecs.py`\n"
+        "3. `python scripts/train_cnn.py`\n"
+        "4. `streamlit run app.py`\n\n"
+        "또는 환경변수로 경로 지정: `MMR_MODEL_DIR`, `MMR_MANIFEST`, `MMR_META`"
+    )
     st.stop()
 
 st.success(f"모델 로드 완료 — {len(track_ids)}곡, 태그: {', '.join(tags)}")

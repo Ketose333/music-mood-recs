@@ -68,3 +68,9 @@ python -m pytest tests/ -v
 ```bash
 python scripts/package_submission.py --name 본인이름
 ```
+
+## 라이선스
+
+- 코드: MIT
+- 데이터: MTG-Jamendo — 메타데이터 CC BY-NC-SA 4.0, 오디오 개별 CC 라이선스, **비상업 연구용**
+- 모델 아티팩트: 본 프로젝트 산출물, 비상업 연구용

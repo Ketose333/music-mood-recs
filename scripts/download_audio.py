@@ -22,6 +22,7 @@ import argparse
 import os
 import sys
 import tarfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 import requests
@@ -51,27 +52,52 @@ def _restrict_subset_to_folders(
     return {k: (_filter(v) if k in ("train", "validation", "test") else v) for k, v in subset.items()}
 
 
-def _download_tar(idx: int, dest_dir: str) -> str:
+def _download_tar(idx: int, dest_dir: str, max_retries: int = 5) -> str:
     filename = _TAR_TEMPLATE.format(idx=idx)
     url = f"{_MIRROR}/{filename}"
     dest = os.path.join(dest_dir, filename)
-    if os.path.exists(dest) and os.path.getsize(dest) > 0:
-        print(f"  TAR {filename} already exists, skipping download", flush=True)
+    # Expected size from a previous HEAD or the known per-TAR size (~493MB).
+    # We treat a file as complete only if size > 400MB (these TARs are ~490-517MB).
+    min_complete_bytes = 400 * 1024 * 1024
+    if os.path.exists(dest) and os.path.getsize(dest) >= min_complete_bytes:
+        print(f"  TAR {filename} already complete ({os.path.getsize(dest)//1024//1024}MB), skipping", flush=True)
         return dest
-    print(f"  Downloading {url}", flush=True)
-    with requests.get(url, stream=True, timeout=(15, 60)) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("Content-Length", 0))
-        downloaded = 0
-        with open(dest, "wb") as f:
-            for chunk in r.iter_content(chunk_size=512 * 1024):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if total and downloaded % (10 * 1024 * 1024) < len(chunk):
-                        pct = 100 * downloaded / total if total else 0
-                        print(f"    {filename}: {downloaded // 1024 // 1024}MB / {total // 1024 // 1024}MB ({pct:.0f}%)", flush=True)
-    return dest
+    # Remove any partial file from a crashed run before retrying
+    if os.path.exists(dest):
+        partial_mb = os.path.getsize(dest) // 1024 // 1024
+        print(f"  Removing partial {filename} ({partial_mb}MB)", flush=True)
+        os.remove(dest)
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"  Downloading {url} (attempt {attempt}/{max_retries})", flush=True)
+            with requests.get(url, stream=True, timeout=(15, 120)) as r:
+                r.raise_for_status()
+                total = int(r.headers.get("Content-Length", 0))
+                downloaded = 0
+                with open(dest, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=512 * 1024):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total and downloaded % (20 * 1024 * 1024) < len(chunk):
+                                pct = 100 * downloaded / total if total else 0
+                                print(f"    {filename}: {downloaded // 1024 // 1024}MB / {total // 1024 // 1024}MB ({pct:.0f}%)", flush=True)
+            final_size = os.path.getsize(dest)
+            if final_size >= min_complete_bytes:
+                print(f"  TAR {filename} complete ({final_size//1024//1024}MB)", flush=True)
+                return dest
+            print(f"  TAR {filename} incomplete ({final_size//1024//1024}MB), retrying", flush=True)
+            os.remove(dest)
+        except (requests.exceptions.RequestException, ConnectionError) as e:
+            print(f"  TAR {filename} attempt {attempt} failed: {type(e).__name__}: {e}", flush=True)
+            if os.path.exists(dest):
+                os.remove(dest)
+            if attempt < max_retries:
+                import time
+                wait = 10 * attempt
+                print(f"  waiting {wait}s before retry", flush=True)
+                time.sleep(wait)
+    raise RuntimeError(f"Failed to download {filename} after {max_retries} attempts")
 
 
 def _extract_subset_from_tar(
@@ -93,6 +119,7 @@ def main() -> int:
     parser.add_argument("--out", default="data/audio", help="output directory for extracted mp3s")
     parser.add_argument("--meta-out", default="artifacts/subset_meta.csv", help="restricted subset metadata CSV")
     parser.add_argument("--dest-dir", default="data/jamendo", help="jamendo metadata cache dir")
+    parser.add_argument("--parallel", type=int, default=3, help="number of TARs to download in parallel")
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -111,16 +138,32 @@ def main() -> int:
             print(f"  {s} (restricted): {len(subset[s])}")
 
     wanted = _subset_path_set(subset)
-    print(f"Total unique audio paths to extract: {len(wanted)}")
+    print(f"Total unique audio paths to extract: {len(wanted)}", flush=True)
 
+    # Phase 1: download all TARs in parallel (keep tar files on disk)
+    tar_indices = list(range(args.max_tars))
+    print(f"Downloading {len(tar_indices)} TARs with parallelism={args.parallel}", flush=True)
+    tar_paths: dict[int, str] = {}
+    with ThreadPoolExecutor(max_workers=args.parallel) as pool:
+        futures = {pool.submit(_download_tar, idx, args.out): idx for idx in tar_indices}
+        for fut in as_completed(futures):
+            idx = futures[fut]
+            try:
+                tar_paths[idx] = fut.result()
+                print(f"  TAR {idx:02d} downloaded", flush=True)
+            except Exception as e:
+                print(f"  TAR {idx:02d} FAILED: {e}", flush=True)
+
+    # Phase 2: extract subset tracks from each TAR in order, then delete the tar
     total_extracted = 0
-    for idx in range(args.max_tars):
-        tar_path = _download_tar(idx, args.out)
-        n = _extract_subset_from_tar(tar_path, args.out, wanted)
+    for idx in tar_indices:
+        if idx not in tar_paths:
+            print(f"  TAR {idx:02d}: skipped (download failed)", flush=True)
+            continue
+        n = _extract_subset_from_tar(tar_paths[idx], args.out, wanted)
         total_extracted += n
-        folder = f"{idx:02d}"
-        print(f"  TAR {folder}: extracted {n} tracks (cumulative {total_extracted})")
-        os.remove(tar_path)
+        print(f"  TAR {idx:02d}: extracted {n} tracks (cumulative {total_extracted})", flush=True)
+        os.remove(tar_paths[idx])
 
     print(f"\nExtracted {total_extracted} / {len(wanted)} subset tracks to {args.out}")
 
