@@ -8,15 +8,110 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import torch
+import torch.nn as nn
 from sklearn.metrics.pairwise import cosine_similarity
 
-from src.models.cnn import CNNConfig, MoodCNN
-from src.recommend.similar import extract_embeddings, top_k_similar
+# >>> AUTO-SYNCED from src/models/cnn.py (run scripts/sync_standalone_app.py) >>>
+@dataclass(frozen=True)
+class CNNConfig:
+    n_mels: int = 128
+    n_classes: int = 5
+    embedding_dim: int = 64
+    conv_channels: tuple[int, int, int] = (16, 32, 64)
+    kernel_size: int = 3
+    dropout: float = 0.3
+
+
+class MoodCNN(nn.Module):
+    def __init__(self, cfg: CNNConfig | None = None):
+        super().__init__()
+        self.cfg = cfg or CNNConfig()
+        c1, c2, c3 = self.cfg.conv_channels
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, c1, self.cfg.kernel_size, padding=self.cfg.kernel_size // 2),
+            nn.BatchNorm2d(c1),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),
+            nn.Conv2d(c1, c2, self.cfg.kernel_size, padding=self.cfg.kernel_size // 2),
+            nn.BatchNorm2d(c2),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),
+            nn.Conv2d(c2, c3, self.cfg.kernel_size, padding=self.cfg.kernel_size // 2),
+            nn.BatchNorm2d(c3),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),
+        )
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.embed_head = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(c3, self.cfg.embedding_dim),
+            nn.ReLU(),
+            nn.Dropout(self.cfg.dropout),
+        )
+        self.classifier = nn.Linear(self.cfg.embedding_dim, self.cfg.n_classes)
+
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the embedding vector (batch, embedding_dim) used for recommendation."""
+        h = self.features(x)
+        h = self.pool(h)
+        return self.embed_head(h)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.embed(x)
+        return self.classifier(z)
+# <<< AUTO-SYNCED <<<
+
+
+# >>> AUTO-SYNCED from src/recommend/similar.py (run scripts/sync_standalone_app.py) >>>
+@torch.no_grad()
+def extract_embeddings(
+    model: MoodCNN,
+    mels: np.ndarray,
+    batch_size: int = 32,
+    device: torch.device | str = "cpu",
+) -> np.ndarray:
+    """Compute embeddings for an array of mel-spectrograms.
+
+    ``mels``: (N, n_mels, n_frames) float32. Returns (N, embedding_dim) float32.
+    """
+    model.eval()
+    model.to(device)
+    out: list[np.ndarray] = []
+    for i in range(0, len(mels), batch_size):
+        batch = mels[i : i + batch_size]
+        x = torch.from_numpy(batch).unsqueeze(1).to(device)
+        z = model.embed(x)
+        out.append(z.cpu().numpy())
+    return np.concatenate(out, axis=0)
+
+
+def top_k_similar(
+    query_idx: int,
+    embeddings: np.ndarray,
+    k: int = 5,
+    exclude_query: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (indices, similarities) of the top-k most similar tracks.
+
+    Cosine similarity is computed between the query embedding and all others.
+    If ``exclude_query`` is True, the query itself is removed from the results.
+    """
+    query = embeddings[query_idx : query_idx + 1]
+    sims = cosine_similarity(query, embeddings).ravel()
+    order = np.argsort(-sims)
+    if exclude_query:
+        order = order[order != query_idx]
+    top = order[:k]
+    return top, sims[top]
+# <<< AUTO-SYNCED <<<
+
 
 MODEL_DIR = os.environ.get("MMR_MODEL_DIR", "models/cnn")
 MELSPEC_DIR = os.environ.get("MMR_MELSPEC_DIR", "artifacts/melspecs")
