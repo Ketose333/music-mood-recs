@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Data & artifacts (large, downloaded/generated locally — not tracked)
+/data/
+/artifacts/
+
+# Report / submission artifacts (binary, not source)
+*.pptx
+*.pdf
+
+# Streamlit / secrets
+.streamlit/secrets.toml
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
