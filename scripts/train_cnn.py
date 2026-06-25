@@ -23,7 +23,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from src.data.dataset import MelspecDataset
-from src.data.jamendo import build_subset
+from src.data.load_jamendo import build_subset
 from src.evaluation.metrics import compute_metrics
 from src.models.cnn import CNNConfig, MoodCNN, count_parameters
 

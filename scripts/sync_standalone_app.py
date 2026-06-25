@@ -32,10 +32,32 @@ def _node_name(node: ast.stmt) -> str | None:
         return node.name
     if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
         return node.targets[0].id
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        return node.target.id
     return None
 
 
+def _whole_module(src_path: Path) -> str:
+    source = src_path.read_text(encoding="utf-8")
+    lines = source.splitlines(keepends=True)
+    tree = ast.parse(source)
+    segments = []
+    for i, node in enumerate(tree.body):
+        if i == 0 and isinstance(node, ast.Expr) and isinstance(getattr(node, "value", None), ast.Constant) and isinstance(node.value.value, str):
+            continue  # module docstring
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            continue
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("src."):
+            continue  # internal cross-module ref — must already be defined by an earlier block
+        decorators = getattr(node, "decorator_list", [])
+        start_line = min([d.lineno for d in decorators] + [node.lineno])
+        segments.append("".join(lines[start_line - 1 : node.end_lineno]).rstrip("\n"))
+    return "\n\n\n".join(segments) + "\n"
+
+
 def _extract(src_path: Path, names: list[str]) -> str:
+    if names == ["*"]:
+        return _whole_module(src_path)
     source = src_path.read_text(encoding="utf-8")
     lines = source.splitlines(keepends=True)
     tree = ast.parse(source)
@@ -62,7 +84,7 @@ def main() -> int:
             raise SystemExit(f"Marker block not found in app.py for {src_path}")
         body = _extract(src_path, names)
         replacement = f"{begin}\n{body}{end}"
-        text = pattern.sub(replacement, text, count=1)
+        text = pattern.sub(lambda _m, r=replacement: r, text, count=1)
 
     if re.search(r"^\s*from src(\.| )|^\s*import src(\.| |$)", text, re.MULTILINE):
         raise SystemExit("app.py must not import the src package — sync introduced a forbidden import")
