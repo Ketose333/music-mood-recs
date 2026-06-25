@@ -4,10 +4,10 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 상태 | 기획 완료 · 데이터셋 확정(MTG-Jamendo) · 구현 착수 |
+| 상태 | 구현 진행 중 (7/1 발표 데드라인) |
 | 워크스페이스 | `ai-service-blueprints` 레포 바깥의 형제 디렉터리(독립 레포) |
-| 데이터 | MTG-Jamendo 무드/테마 서브셋(상위 10~15 태그 추가 필터) |
-| 모델 | CNN/CRNN, 멜스펙트로그램 입력 |
+| 데이터 | MTG-Jamendo 무드/테마 서브셋(상위 5 태그: happy, energetic, relaxing, film, dark) |
+| 모델 | MoodCNN (단순 CNN, 멜스펙트로그램 입력, ~28K params) |
 | 데모 | Streamlit "곡 선택 → 무드 예측 → 비슷한 무드 추천 5곡" |
 
 ## 문서
@@ -27,3 +27,44 @@
 ## 기존 포트폴리오 연결
 
 `review-sentiment`(NSMC 텍스트 감성분류), 무디트리(`KDigital3/AIproject`, 텍스트/UI)와 모달리티가 겹치지 않는 세 번째 DL 프로젝트로, 음악 오디오 도메인을 추가한다.
+
+## 파이프라인
+
+```
+MTG-Jamendo 메타데이터 → 상위 5 태그 서브셋 필터
+  → 오디오 다운로드(audio-low TAR, --max-tars 10)
+  → 멜스펙트로그램 추출(30초 세그먼트, log-mel, 128 mels)
+  → MoodCNN 학습(BCEWithLogitsLoss, CPU)
+  → 임베딩 추출 + 코사인 유사도 Top-5 추천
+  → Streamlit 데모
+```
+
+## 실행 가이드
+
+```bash
+pip install -r requirements.txt
+
+# 1. 데이터 다운로드 (메타데이터 + 오디오 TAR)
+python scripts/download_audio.py --top-n 5 --max-tars 10
+
+# 2. 멜스펙트로그램 일괄 추출
+python scripts/extract_melspecs.py --audio-dir data/audio --out artifacts/melspecs
+
+# 3. CNN 학습
+python scripts/train_cnn.py --epochs 15 --batch-size 32
+
+# 4. Streamlit 데모 실행
+streamlit run app.py
+```
+
+## 테스트
+
+```bash
+python -m pytest tests/ -v
+```
+
+## 제출 패키징
+
+```bash
+python scripts/package_submission.py --name 본인이름
+```
