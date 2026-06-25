@@ -105,9 +105,21 @@ def _extract_subset_from_tar(
 ) -> int:
     extracted = 0
     with tarfile.open(tar_path) as tar:
-        members = [m for m in tar.getmembers() if m.name in wanted_paths and m.isfile()]
-        for m in members:
-            tar.extract(m, path=out_dir)
+        for m in tar.getmembers():
+            if not m.isfile():
+                continue
+            # audio-low TAR members are named "<folder>/<id>.low.mp3"; the subset
+            # metadata's PATH column uses "<folder>/<id>.mp3" (no ".low").
+            rel = m.name[: -len(".low.mp3")] + ".mp3" if m.name.endswith(".low.mp3") else m.name
+            if rel not in wanted_paths:
+                continue
+            src = tar.extractfile(m)
+            if src is None:
+                continue
+            dest_path = os.path.join(out_dir, rel)
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            with open(dest_path, "wb") as f:
+                f.write(src.read())
             extracted += 1
     return extracted
 
@@ -140,9 +152,27 @@ def main() -> int:
     wanted = _subset_path_set(subset)
     print(f"Total unique audio paths to extract: {len(wanted)}", flush=True)
 
-    # Phase 1: download all TARs in parallel (keep tar files on disk)
-    tar_indices = list(range(args.max_tars))
-    print(f"Downloading {len(tar_indices)} TARs with parallelism={args.parallel}", flush=True)
+    # Incremental runs (e.g. re-running with a higher --max-tars) should not
+    # re-download/re-extract folders whose subset tracks are already on disk.
+    folder_wanted: dict[int, set[str]] = {}
+    tar_indices: list[int] = []
+    already_extracted = 0
+    for idx in range(args.max_tars):
+        folder = f"{idx:02d}"
+        paths = {p for p in wanted if p.startswith(f"{folder}/")}
+        folder_wanted[idx] = paths
+        if paths and all(os.path.exists(os.path.join(args.out, p)) for p in paths):
+            already_extracted += len(paths)
+            print(f"  TAR {idx:02d}: {len(paths)} subset tracks already extracted, skipping", flush=True)
+            continue
+        tar_indices.append(idx)
+
+    # Phase 1: download remaining TARs in parallel (keep tar files on disk)
+    print(
+        f"Downloading {len(tar_indices)} TARs with parallelism={args.parallel} "
+        f"({args.max_tars - len(tar_indices)} skipped, already extracted)",
+        flush=True,
+    )
     tar_paths: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=args.parallel) as pool:
         futures = {pool.submit(_download_tar, idx, args.out): idx for idx in tar_indices}
@@ -155,12 +185,12 @@ def main() -> int:
                 print(f"  TAR {idx:02d} FAILED: {e}", flush=True)
 
     # Phase 2: extract subset tracks from each TAR in order, then delete the tar
-    total_extracted = 0
+    total_extracted = already_extracted
     for idx in tar_indices:
         if idx not in tar_paths:
             print(f"  TAR {idx:02d}: skipped (download failed)", flush=True)
             continue
-        n = _extract_subset_from_tar(tar_paths[idx], args.out, wanted)
+        n = _extract_subset_from_tar(tar_paths[idx], args.out, folder_wanted[idx])
         total_extracted += n
         print(f"  TAR {idx:02d}: extracted {n} tracks (cumulative {total_extracted})", flush=True)
         os.remove(tar_paths[idx])

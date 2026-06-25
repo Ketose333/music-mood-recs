@@ -20,30 +20,12 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.metrics import f1_score, roc_auc_score
 from torch.utils.data import DataLoader
 
 from src.data.dataset import MelspecDataset
 from src.data.jamendo import build_subset
+from src.evaluation.metrics import compute_metrics
 from src.models.cnn import CNNConfig, MoodCNN, count_parameters
-
-
-def _metrics_from_logits(logits: np.ndarray, labels: np.ndarray, threshold: float = 0.5):
-    probs = 1.0 / (1.0 + np.exp(-logits))
-    preds = (probs >= threshold).astype(int)
-    f1_micro = f1_score(labels, preds, average="micro", zero_division=0)
-    f1_macro = f1_score(labels, preds, average="macro", zero_division=0)
-    acc = float((preds == labels).all(axis=1).mean())
-    try:
-        auc = roc_auc_score(labels, probs, average="macro")
-    except ValueError:
-        auc = float("nan")
-    return {
-        "accuracy": round(acc, 4),
-        "f1_micro": round(f1_micro, 4),
-        "f1_macro": round(f1_macro, 4),
-        "roc_auc": round(float(auc), 4),
-    }
 
 
 @torch.no_grad()
@@ -59,7 +41,7 @@ def evaluate(model: MoodCNN, loader: DataLoader, device: torch.device, criterion
         all_labels.append(y.cpu().numpy())
     logits = np.concatenate(all_logits)
     labels = np.concatenate(all_labels)
-    metrics = _metrics_from_logits(logits, labels)
+    metrics = compute_metrics(logits, labels)
     metrics["loss"] = round(total_loss / len(labels), 4)
     return metrics
 

@@ -35,9 +35,10 @@
 - [x] 프로젝트 골격 세팅 완료 (.gitignore, requirements.txt, src/ 패키지)
 - [x] 데이터 수집 모듈 — 메타데이터 다운로드 + 상위 5 태그 서브셋 필터(PR-001)
 - [x] 멜스펙 전처리 파이프라인(PR-001)
-- [ ] 오디오 다운로드 — **일시 중지(5:30 이동), 재시작 필요**
-  - 재시작 명령: `set PYTHONPATH=.&&python -u scripts/download_audio.py --top-n 5 --max-tars 10 --parallel 3 --out data/audio --meta-out artifacts/subset_meta.csv`
-  - 백그라운드 실행: `Start-Process cmd -ArgumentList "/c","logs\run_download.cmd" -WindowStyle Hidden -WorkingDirectory "C:\AGENTS\music-mood-recs"` (logs\run_download.cmd에 위 명령 저장됨)
+- [x] 오디오 다운로드 — `--max-tars 20`으로 1,508곡 다운로드+추출 완료(2026-06-25)
+  - 재시작 스크립트: `scripts/run_download.cmd` — `%~dp0` 기준으로 프로젝트 루트를 찾으므로 PC/클론 경로에 무관하게 동작 (절대경로 하드코딩 없음). `logs/`는 통째로 gitignore돼 있어 스크립트는 `scripts/`에 둠(로그 출력 파일만 `logs/`에 씀)
+  - 백그라운드 실행(레포 루트에서, PowerShell): `Start-Process cmd -ArgumentList "/c","scripts\run_download.cmd" -WindowStyle Hidden -WorkingDirectory "$PWD" -RedirectStandardOutput "logs\download_stdout.log" -RedirectStandardError "logs\download_stderr.log"`
+  - 현재 진행 상황: `--max-tars 20`으로 1,508곡 다운로드+추출 완료(2026-06-25). 초기 버전엔 TAR 멤버명이 `.low.mp3`인데 메타데이터 `PATH`는 `.mp3`라 0/757 추출되는 버그가 있었음(수정 완료, `_extract_subset_from_tar`). 증분 재실행 지원(이미 추출된 폴더는 재다운로드 skip)
   - 부분 TAR 자동 삭제 후 처음부터 받음 (재시도 로직 내장)
   - 병렬 3개 동시 다운로드, 약 205KB/s, 10 TARs에 약 6.7시간 예상
   - 완료 후 자동으로 artifacts/subset_meta.csv 저장 (train 438 / val 119 / test 200)
@@ -86,6 +87,22 @@
 | `.gitattributes` (LFS 필터) | **제거함** — git-lfs 바이너리는 설치돼 있으나 이 레포에 `git lfs install`(pre-push 훅) 미실행 상태였음. 이대로 `*.pt` 커밋 시 로컬엔 LFS 포인터로 저장되나 push 시 실제 바이너리가 업로드 안 되어 원격에 깨진 포인터만 남을 위험. 현재 모델·아티팩트 크기가 매우 작아(130KB/9.6MB) LFS 불필요 |
 
 **최종 정책**: Git 직접 추적 유지(LFS 미사용). 추후 실데이터 학습으로 모델/아티팩트가 크게 커지면(예: 수십MB 이상) 그때 `git lfs install` 정식 실행 후 `.gitattributes` 재도입.
+
+## review-sentiment 구조 대응 점검 (2026-06-25)
+
+`review-sentiment` 패턴 재사용 원칙(§15.1 등)에 따라 1:1 대응 여부를 점검. review-sentiment에 없는 신규 디렉터리 3곳은 의도된 재배치/도메인 특성으로 확인:
+
+| music-mood-recs 신규 항목 | review-sentiment 대응 | 비고 |
+| --- | --- | --- |
+| `artifacts/` | `models/eda/` | EDA 그래프·멜스펙 매니페스트·서브셋 메타를 모델 산출물과 분리 보관(오디오 도메인은 전처리 중간산물이 많아 분리가 합리적) |
+| `logs/` | 없음 | 오디오 다운로드(수시간 소요, 백그라운드 실행)는 review-sentiment 도메인(텍스트)에 없는 작업 — 도메인 특성상 신규 |
+| `notebooks/` | (레포 내 미추적) | 과제 제출물(ipynb) 보관 위치를 명시적으로 분리 |
+
+또한 보완 완료:
+- `packages.txt` 추가(`ffmpeg`) — MTG-Jamendo 오디오가 mp3 포맷이라 Streamlit Cloud의 `librosa`/`soundfile` mp3 디코딩 안정성 확보 목적(review-sentiment의 `packages.txt`=`default-jdk`와 같은 배포 안전장치 패턴).
+- `src/evaluation/metrics.py` 추가 — review-sentiment의 `src/evaluation/metrics.py` 패턴대로 메트릭 계산 로직을 `scripts/train_cnn.py`에서 분리(`compute_metrics`, `build_comparison_table`, `load_all_metrics`). 기존 테스트 16개 PASS 확인.
+
+(`scripts/`의 산출물 생성 스크립트 `make_notebook.py`/`make_report.py`/`export_pptx_images.py`/`package_submission.py`는 review-sentiment에 대응 없음 — 의도 확인 보류 항목으로 남김.)
 
 ## 알려진 이슈
 
