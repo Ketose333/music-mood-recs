@@ -5,12 +5,16 @@ __pycache__/
 venv/
 env/
 
-# Raw audio data
-# data/audio/ is now tracked via git-lfs (*.mp3, see .gitattributes) so it can
-# move between PCs without a slow re-download. Metadata cache / synth test
-# data stay untracked (small/throwaway, regenerate fast).
+# Raw audio + heavy derived artifacts: hosted on the HF dataset repo
+# (Ketose333/music-mood-recs-assets) instead of git — git LFS storage for
+# these was ~7x over GitHub's free quota. app.py downloads them on demand via
+# huggingface_hub (see _resolve() in app.py). Re-create locally with
+# scripts/download_audio.py / scripts/extract_melspecs.py if needed.
+/data/audio/
 /data/jamendo/
 /data/synth_audio/
+/artifacts/melspecs/
+/artifacts/embeddings.npy
 
 # Logs (not source)
 /logs/
