@@ -51,6 +51,15 @@
 - 변경 파일: `src/recommend/similar.py`(`top_k_similar_to_vector`/`predict_mood_probs`/`MOOD_KEYWORDS`/`infer_mood_from_text` 추가), `scripts/sync_standalone_app.py`(BLOCKS에 melspec/신규 similar 함수 추가), `app.py`(탭 2개 추가 + 동기화), `tests/test_similar.py`(신규 함수 4개 테스트 추가).
 - 검증: `python -m pytest tests/ -v` 29개 전체 PASS, `streamlit run app.py` 로컬 기동 후 HTTP 200 확인(수동 UI 클릭 테스트는 미실시 — 다음 세션에서 실제 오디오 업로드/텍스트 입력 케이스로 한 번 더 확인 권장).
 
+## Streamlit 데모 — 탭 통합 + 업로드 X버튼 가려지는 문제 수정 (2026-06-26)
+
+사용자가 클라우드에서 시연해보니 1) 탭이 6개로 늘어나 review-sentiment(4탭)와 비대칭이고 너무 많다는 피드백, 2) 큰 파일 업로드 시 Streamlit이 띄우는 용량 초과 에러가 업로드된 파일 칩을 가려서 제거(×) 버튼을 누르기 어렵다는 버그 제보가 있었음.
+
+- [x] **탭 6개 → 4개로 통합** — `🔍 라이브러리 곡 예측`/`🎤 오디오 업로드`/`💬 텍스트로 찾기`를 별도 탭으로 쪼개지 않고, 단일 `🔍 예측` 탭 안에 `st.radio`(가로형) "입력 방식" 선택자로 합침. review-sentiment와 동일하게 다시 4탭(`🔍 예측`/`📊 모델 성능`/`📈 데이터 탐색(EDA)`/`ℹ️ 프로젝트 소개`) 구조가 됐고, 탭 내부 콘텐츠(3가지 입력 방식)는 그대로 유지.
+- [x] **업로드 용량 초과 에러가 ×버튼을 가리는 문제** — 근본 원인은 `.streamlit/config.toml`의 `maxUploadSize`가 **5MB**로 설정돼 있었던 것(보통 mp3 한 곡이 5~10MB라 거의 항상 초과). `maxUploadSize`를 **50MB**로 올려 정상적인 곡 업로드에서는 에러 자체가 거의 발생하지 않도록 함. 그래도 큰 파일을 올리는 경우를 대비해, Streamlit 내부 ×버튼에 의존하지 않는 **"🔄 다른 파일 선택" 버튼**을 추가(`st.session_state.uploader_reset_n`을 증가시켜 `file_uploader`의 `key`를 바꿔 강제로 새 위젯 인스턴스를 만드는 방식) — 에러 메시지가 무엇을 가리든 항상 일반 크기의 버튼으로 업로드 상태를 초기화할 수 있음.
+- 변경 파일: `.streamlit/config.toml`(`maxUploadSize` 5→50), `app.py`(탭 구조를 라디오 기반 단일 탭으로 리팩터링 + 리셋 버튼 추가), `submission/music_mood_recs.py`(재생성).
+- 검증: `python -m pytest tests/ -v` 29개 전체 PASS, `streamlit run app.py` 로컬 기동 HTTP 200 확인. **클라우드에서 실제 큰 파일 업로드로 ×버튼/리셋 버튼 동작 재확인은 사용자가 다음 시연 때 진행 예정.**
+
 ## 보고서 PPT 데이터 갱신 (2026-06-26)
 
 - [x] `scripts/compute_eda.py` 버그 수정 — 함수 내 중복 `import os`로 `UnboundLocalError` 발생하던 문제 해결, 재실행해 `fig_tag_distribution.png`/`fig_duration_hist.png`/`fig_melspec_example.png` 재생성 완료.

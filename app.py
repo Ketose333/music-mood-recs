@@ -422,101 +422,114 @@ def _render_mood_probs(probs: np.ndarray) -> str:
     return top_mood
 
 
-tab_predict, tab_upload, tab_text, tab_compare, tab_eda, tab_about = st.tabs(
-    [
-        "🔍 라이브러리 곡 예측",
-        "🎤 오디오 업로드",
-        "💬 텍스트로 찾기",
-        "📊 모델 성능",
-        "📈 데이터 탐색(EDA)",
-        "ℹ️ 프로젝트 소개",
-    ]
+tab_predict, tab_compare, tab_eda, tab_about = st.tabs(
+    ["🔍 예측", "📊 모델 성능", "📈 데이터 탐색(EDA)", "ℹ️ 프로젝트 소개"]
 )
 
 with tab_predict:
-    col_in, col_out = st.columns([1, 2])
+    input_mode = st.radio(
+        "입력 방식",
+        ["📂 라이브러리 곡 선택", "🎤 오디오 업로드", "💬 텍스트로 찾기"],
+        horizontal=True,
+    )
+    st.divider()
 
-    with col_in:
-        display_options = [_track_display(tid, meta, tags) for tid in track_ids]
-        selected = st.selectbox("곡 선택", range(len(display_options)), format_func=lambda i: display_options[i])
-        st.caption(f"트랙 ID: {track_ids[selected]}")
-
-        selected_audio = _audio_path(track_ids[selected], manifest)
-        if selected_audio:
-            st.audio(selected_audio)
-        else:
-            st.caption("🔇 오디오 파일을 찾을 수 없습니다.")
-
-        predict_clicked = st.button("예측 + 추천", use_container_width=True)
-
-    if predict_clicked:
-        mel = load_mel(manifest.iloc[selected]["npy_path"])
-        x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
-        with torch.no_grad():
-            logits = model(x)
-            probs = torch.sigmoid(logits)[0].numpy()
-
-        with col_out:
-            st.subheader("예측 무드")
-            _render_mood_probs(probs)
-
-            st.divider()
-            st.subheader("비슷한 무드의 곡 Top-5")
-            idxs, sims = top_k_similar(selected, embeddings, k=5)
-            _render_recommendations(idxs, sims)
-
-with tab_upload:
-    st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 라이브러리에서 비슷한 곡 5개를 추천받습니다.")
-    uploaded = st.file_uploader("오디오 파일 업로드 (mp3/wav/ogg/flac)", type=["mp3", "wav", "ogg", "flac", "m4a"])
-
-    if uploaded is not None:
-        st.audio(uploaded)
-        with st.spinner("멜스펙트로그램 추출 + 무드 예측 중..."):
-            suffix = os.path.splitext(uploaded.name)[1] or ".mp3"
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(uploaded.getvalue())
-                tmp_path = tmp.name
-            try:
-                mel = extract_melspec(tmp_path, MelspecConfig(n_mels=cfg.n_mels))
-                x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
-                with torch.no_grad():
-                    z = model.embed(x)
-                    probs = torch.sigmoid(model.classifier(z))[0].numpy()
-                query_embedding = z[0].numpy()
-            finally:
-                os.remove(tmp_path)
-
+    if input_mode == "📂 라이브러리 곡 선택":
         col_in, col_out = st.columns([1, 2])
+
         with col_in:
-            st.subheader("예측 무드")
-            _render_mood_probs(probs)
-        with col_out:
-            st.subheader("비슷한 무드의 곡 Top-5")
-            idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
-            _render_recommendations(idxs, sims)
+            display_options = [_track_display(tid, meta, tags) for tid in track_ids]
+            selected = st.selectbox("곡 선택", range(len(display_options)), format_func=lambda i: display_options[i])
+            st.caption(f"트랙 ID: {track_ids[selected]}")
 
-with tab_text:
-    st.caption("지금 기분이나 원하는 분위기를 문장으로 입력하면, 가장 가까운 무드를 추정해 그 무드에 맞는 곡을 추천합니다.")
-    text_input = st.text_input("지금 기분이 어떤가요?", placeholder="예: 오늘 너무 우울하고 힘들어서 위로받을 음악 듣고 싶어")
-    text_clicked = st.button("무드 찾기", use_container_width=True)
+            selected_audio = _audio_path(track_ids[selected], manifest)
+            if selected_audio:
+                st.audio(selected_audio)
+            else:
+                st.caption("🔇 오디오 파일을 찾을 수 없습니다.")
 
-    if text_clicked:
-        if not text_input.strip():
-            st.warning("문장을 입력해주세요.")
-        else:
-            best_tag, keyword_hits = infer_mood_from_text(text_input, tags)
-            if best_tag is None:
-                best_tag = tags[0]
+            predict_clicked = st.button("예측 + 추천", use_container_width=True)
 
-            st.success(f"추정된 무드: {_MOOD_EMOJI.get(best_tag, '')} **{best_tag}** (키워드 매칭 {keyword_hits[best_tag]}건)")
-            st.caption(f"태그별 키워드 매칭 수: {keyword_hits}")
+        if predict_clicked:
+            mel = load_mel(manifest.iloc[selected]["npy_path"])
+            x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
+            with torch.no_grad():
+                logits = model(x)
+                probs = torch.sigmoid(logits)[0].numpy()
 
-            track_probs = predict_mood_probs(model, embeddings)
-            tag_idx = tags.index(best_tag)
-            order = np.argsort(-track_probs[:, tag_idx])[:5]
-            sims = track_probs[order, tag_idx]
-            st.subheader(f"'{best_tag}' 무드에 가장 잘 맞는 곡 Top-5")
-            _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
+            with col_out:
+                st.subheader("예측 무드")
+                _render_mood_probs(probs)
+
+                st.divider()
+                st.subheader("비슷한 무드의 곡 Top-5")
+                idxs, sims = top_k_similar(selected, embeddings, k=5)
+                _render_recommendations(idxs, sims)
+
+    elif input_mode == "🎤 오디오 업로드":
+        st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 라이브러리에서 비슷한 곡 5개를 추천받습니다.")
+
+        if "uploader_reset_n" not in st.session_state:
+            st.session_state.uploader_reset_n = 0
+
+        uploaded = st.file_uploader(
+            "오디오 파일 업로드 (mp3/wav/ogg/flac/m4a, 최대 50MB)",
+            type=["mp3", "wav", "ogg", "flac", "m4a"],
+            key=f"audio_uploader_{st.session_state.uploader_reset_n}",
+        )
+
+        if uploaded is not None:
+            if st.button("🔄 다른 파일 선택", key="reset_uploader_btn"):
+                st.session_state.uploader_reset_n += 1
+                st.rerun()
+
+            st.audio(uploaded)
+            with st.spinner("멜스펙트로그램 추출 + 무드 예측 중..."):
+                suffix = os.path.splitext(uploaded.name)[1] or ".mp3"
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    tmp.write(uploaded.getvalue())
+                    tmp_path = tmp.name
+                try:
+                    mel = extract_melspec(tmp_path, MelspecConfig(n_mels=cfg.n_mels))
+                    x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
+                    with torch.no_grad():
+                        z = model.embed(x)
+                        probs = torch.sigmoid(model.classifier(z))[0].numpy()
+                    query_embedding = z[0].numpy()
+                finally:
+                    os.remove(tmp_path)
+
+            col_in, col_out = st.columns([1, 2])
+            with col_in:
+                st.subheader("예측 무드")
+                _render_mood_probs(probs)
+            with col_out:
+                st.subheader("비슷한 무드의 곡 Top-5")
+                idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
+                _render_recommendations(idxs, sims)
+
+    else:
+        st.caption("지금 기분이나 원하는 분위기를 문장으로 입력하면, 가장 가까운 무드를 추정해 그 무드에 맞는 곡을 추천합니다.")
+        text_input = st.text_input("지금 기분이 어떤가요?", placeholder="예: 오늘 너무 우울하고 힘들어서 위로받을 음악 듣고 싶어")
+        text_clicked = st.button("무드 찾기", use_container_width=True)
+
+        if text_clicked:
+            if not text_input.strip():
+                st.warning("문장을 입력해주세요.")
+            else:
+                best_tag, keyword_hits = infer_mood_from_text(text_input, tags)
+                if best_tag is None:
+                    best_tag = tags[0]
+
+                st.success(f"추정된 무드: {_MOOD_EMOJI.get(best_tag, '')} **{best_tag}** (키워드 매칭 {keyword_hits[best_tag]}건)")
+                st.caption(f"태그별 키워드 매칭 수: {keyword_hits}")
+
+                track_probs = predict_mood_probs(model, embeddings)
+                tag_idx = tags.index(best_tag)
+                order = np.argsort(-track_probs[:, tag_idx])[:5]
+                sims = track_probs[order, tag_idx]
+                st.subheader(f"'{best_tag}' 무드에 가장 잘 맞는 곡 Top-5")
+                _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
 
 with tab_compare:
     all_metrics = load_all_metrics()
@@ -561,7 +574,7 @@ with tab_about:
         "분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천합니다. "
         "분류와 추천을 별도 파이프라인으로 이어붙이지 않고 하나의 모델로 증명하는 DL 포트폴리오 프로젝트입니다.\n\n"
         "라이브러리에 있는 곡을 고르는 것뿐 아니라, **직접 가진 오디오 파일을 업로드**해 동일한 모델로 무드를 예측하거나, "
-        "**지금 기분을 문장으로 입력**해 그 무드에 맞는 곡을 찾을 수도 있습니다(🎤 오디오 업로드 / 💬 텍스트로 찾기 탭)."
+        "**지금 기분을 문장으로 입력**해 그 무드에 맞는 곡을 찾을 수도 있습니다(🔍 예측 탭 상단의 입력 방식 선택)."
     )
     stat_cols = st.columns(3)
     stat_cols[0].metric("데이터", "MTG-Jamendo")
