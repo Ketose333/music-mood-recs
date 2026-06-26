@@ -159,6 +159,7 @@ AUDIO_DIR = os.environ.get("MMR_AUDIO_DIR", "data/audio")
 MELSPEC_DIR = os.environ.get("MMR_MELSPEC_DIR", "artifacts/melspecs")
 MANIFEST_CSV = os.environ.get("MMR_MANIFEST", "artifacts/melspec_manifest.csv")
 META_CSV = os.environ.get("MMR_META", "artifacts/subset_meta.csv")
+EMBEDDINGS_NPY = os.environ.get("MMR_EMBEDDINGS", "artifacts/embeddings.npy")
 
 
 @st.cache_resource(max_entries=1)
@@ -186,19 +187,29 @@ def load_manifest_and_meta(manifest_csv: str, meta_csv: str):
 
 
 @st.cache_data
-def load_all_melspecs(manifest: pd.DataFrame):
-    mels = []
-    track_ids = []
-    for _, row in manifest.iterrows():
-        mel = np.load(row["npy_path"]).astype(np.float32)
-        mels.append(mel)
-        track_ids.append(row["TRACK_ID"])
-    return np.stack(mels), track_ids
+def load_embeddings(embeddings_npy: str, manifest: pd.DataFrame) -> np.ndarray:
+    """Loads precomputed embeddings (scripts/precompute_embeddings.py), aligned
+    1:1 with ``manifest`` row order.
+
+    Streamlit Community Cloud only guarantees 1GB RAM: stacking every
+    mel-spectrogram (~1.4GB for 2,247 tracks) to run a forward pass at startup
+    would OOM-kill the app, so that forward pass happens offline instead and
+    only this small embeddings array is loaded here.
+    """
+    embeddings = np.load(embeddings_npy)
+    if len(embeddings) != len(manifest):
+        raise ValueError(
+            f"embeddings ({len(embeddings)}) and manifest ({len(manifest)}) row counts differ — "
+            "re-run scripts/precompute_embeddings.py"
+        )
+    return embeddings
 
 
-@st.cache_resource(max_entries=1)
-def compute_all_embeddings(_model: MoodCNN, mels: np.ndarray):
-    return extract_embeddings(_model, mels, batch_size=32, device="cpu")
+@st.cache_data(max_entries=8)
+def load_mel(npy_path: str) -> np.ndarray:
+    """Lazily loads a single track's mel-spectrogram (only the selected track,
+    never the full dataset — see load_embeddings for why)."""
+    return np.load(npy_path).astype(np.float32)
 
 
 def _track_display(track_id: str, meta: pd.DataFrame, tags: list[str]) -> str:
@@ -235,8 +246,8 @@ with st.sidebar:
 try:
     model, tags, cfg = load_model_artifacts(MODEL_DIR)
     manifest, meta = load_manifest_and_meta(MANIFEST_CSV, META_CSV)
-    mels, track_ids = load_all_melspecs(manifest)
-    embeddings = compute_all_embeddings(model, mels)
+    track_ids = manifest["TRACK_ID"].tolist()
+    embeddings = load_embeddings(EMBEDDINGS_NPY, manifest)
 except Exception as exc:
     st.error(f"모델/데이터를 불러오지 못했습니다: {exc}")
     st.info(
@@ -244,8 +255,9 @@ except Exception as exc:
         "1. `python scripts/download_audio.py --top-n 5 --max-tars 30`\n"
         "2. `python scripts/extract_melspecs.py`\n"
         "3. `python scripts/train_cnn.py`\n"
-        "4. `streamlit run app.py`\n\n"
-        "또는 환경변수로 경로 지정: `MMR_MODEL_DIR`, `MMR_MANIFEST`, `MMR_META`"
+        "4. `python -m scripts.precompute_embeddings`\n"
+        "5. `streamlit run app.py`\n\n"
+        "또는 환경변수로 경로 지정: `MMR_MODEL_DIR`, `MMR_MANIFEST`, `MMR_META`, `MMR_EMBEDDINGS`"
     )
     st.stop()
 
@@ -280,7 +292,7 @@ with tab_predict:
         predict_clicked = st.button("예측 + 추천", use_container_width=True)
 
     if predict_clicked:
-        mel = mels[selected]
+        mel = load_mel(manifest.iloc[selected]["npy_path"])
         x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
         with torch.no_grad():
             logits = model(x)

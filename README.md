@@ -53,7 +53,11 @@ python scripts/extract_melspecs.py --audio-dir data/audio --out artifacts/melspe
 # 3. CNN 학습
 python scripts/train_cnn.py --epochs 15 --batch-size 32
 
-# 4. Streamlit 데모 실행
+# 4. 추천용 임베딩 사전계산 (Streamlit Cloud의 1GB 메모리 제한 대응 — app.py가
+#    전체 멜스펙을 메모리에 올리지 않고 이 파일만 읽도록)
+python -m scripts.precompute_embeddings
+
+# 5. Streamlit 데모 실행
 streamlit run app.py
 ```
 
