@@ -87,7 +87,6 @@ def main() -> None:
         "duration_median": round(float(durations.median()), 1),
     }
     import json
-    import os
     os.makedirs("models/eda", exist_ok=True)
     with open("models/eda/stats.json", "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
