@@ -14,6 +14,11 @@ Workflow:
 Usage:
   python scripts/download_audio.py --top-n 5 --max-tars 20 --out data/audio
   python scripts/download_audio.py --top-n 5 --max-tars 100 --out data/audio
+
+  # Upload extracted tracks straight to a HF dataset repo instead of --out
+  # (requires `hf auth login` with write access to the repo beforehand):
+  python scripts/download_audio.py --top-n 5 --max-tars 100 \
+      --hf-repo-id Ketose333/music-mood-recs-assets
 """
 
 from __future__ import annotations
@@ -34,6 +39,17 @@ def main() -> int:
     parser.add_argument("--meta-out", default="artifacts/subset_meta.csv", help="restricted subset metadata CSV")
     parser.add_argument("--dest-dir", default="data/jamendo", help="jamendo metadata cache dir")
     parser.add_argument("--parallel", type=int, default=3, help="number of TARs to download in parallel")
+    parser.add_argument(
+        "--hf-repo-id",
+        default=None,
+        help="if set, upload extracted tracks straight to this HF dataset repo instead of --out "
+        "(requires `hf auth login` with write access)",
+    )
+    parser.add_argument(
+        "--hf-path-prefix",
+        default="data/audio",
+        help="path prefix inside the HF repo for uploaded tracks (only used with --hf-repo-id)",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -51,7 +67,14 @@ def main() -> int:
         for s in ("train", "validation", "test"):
             print(f"  {s} (restricted): {len(subset[s])}")
 
-    download_and_extract_subset(subset, args.out, args.max_tars, args.parallel)
+    download_and_extract_subset(
+        subset,
+        args.out,
+        args.max_tars,
+        args.parallel,
+        hf_repo_id=args.hf_repo_id,
+        hf_path_prefix=args.hf_path_prefix,
+    )
 
     import pandas as pd
 
