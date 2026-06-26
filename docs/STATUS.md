@@ -42,12 +42,20 @@
 - [x] **버그 수정 3(OOM)** — Streamlit Community Cloud는 RAM 1GB만 보장하는데 기존 `app.py`가 시작 시 멜스펙 2,247개(~1.4GB)를 전부 메모리에 올려 OOM으로 크래시. `scripts/precompute_embeddings.py`로 임베딩을 오프라인 1회 계산해 `artifacts/embeddings.npy`(0.6MB)로 분리, 예측 시에는 선택한 1곡만 지연 로딩하도록 변경(`82fe973`). **로컬·클라우드 모두 정상 동작 확인됨.**
 - [x] 죽은 잔재 정리: `src/preprocess/`(빈 디렉터리), `models/cnn_synth/`(미참조 합성 테스트 아티팩트) 삭제.
 
+## 보고서 PPT 데이터 갱신 (2026-06-26)
+
+- [x] `scripts/compute_eda.py` 버그 수정 — 함수 내 중복 `import os`로 `UnboundLocalError` 발생하던 문제 해결, 재실행해 `fig_tag_distribution.png`/`fig_duration_hist.png`/`fig_melspec_example.png` 재생성 완료.
+- [x] `scripts/plot_training_curves.py` 신규 추가 — `models/cnn/metrics.json`의 `history`로 train/val loss + val F1(micro/macro) 곡선 그려 `artifacts/fig_training_curves.png` 생성(이전엔 해당 그림을 만드는 스크립트가 없어 보고서 슬라이드 13/14가 깨진 상태였음).
+- [x] `scripts/make_report.py` 텍스트 갱신 — 모델학습 슬라이드(13)에 실제 학습 결과(best val F1(micro)=0.2977, test F1(micro)=0.2642/accuracy=0.1659/ROC-AUC=0.7456) 반영, 보완사항(19)·소감(20) 슬라이드의 stale한 "10/100폴더" 서술을 "30 TAR(2,247곡)" 기준으로 정정. 커밋 `ca83b5e`.
+- **[!] 보고서 PPTX 실제 생성은 보류** — `make_report.py`가 의존하는 템플릿 `딥러닝 산출물_202500312(홍길동v0.1).pptx`가 이 PC(워크트리)에 없음(레포에도 커밋 안 됨, 디스크 전체 검색해도 못 찾음). 사용자가 **다른 PC에서** 템플릿을 받아 `python scripts/make_report.py` 실행해 `음악무드분류및추천_보고서.pptx` 생성 예정.
+
 ## 남은 작업 (P0, 데드라인 내 필수)
 
 - [x] 노트북 끝까지 실행 — 멜스펙 추출 + CNN 재학습 + 테스트셋 평가(완료, `c2c1579`)
 - [x] 재학습 결과로 `models/cnn/metrics.json` 갱신 확인(test 성능 포함)
 - [x] `app.py` Streamlit 데모 — 로컬 + Streamlit Cloud 배포 모두 정상 동작 확인
-- [ ] 보고서 PPT에 실데이터 학습 결과/그래프 삽입 (`scripts/make_report.py`) — best val F1(micro)=0.2977, test F1(micro)=0.2642 반영
+- [x] 보고서 PPT 스크립트에 실데이터 학습 결과/그래프 반영 (`scripts/make_report.py`, `scripts/plot_training_curves.py`) — 코드는 완료, **실제 PPTX 생성은 템플릿 보유 PC에서 마무리 필요**
+- [ ] (다른 PC) 템플릿 파일 확보 → `python scripts/make_report.py` 실행 → PPTX 생성 확인
 - [ ] 발표 시연 리허설 + `scripts/package_submission.py`로 zip 패키징 → 이메일 제출(ahnhg2000@gmail.com, 2026-07-01 09:00)
 
 ## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)
