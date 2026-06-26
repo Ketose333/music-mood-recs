@@ -81,9 +81,9 @@ MTG-Jamendo 메타데이터
 | 오디오 다운로드 + 멜스펙트로그램 추출 | ✅ | `scripts/extract_melspecs.py`, `src/preprocessing/melspec.py` |
 | MoodCNN 학습·평가 | ✅ | **val F1(micro) 0.2977 / test F1(micro) 0.2642**, `models/cnn/` |
 | 임베딩 재사용 코사인 유사도 추천 | ✅ | `src/recommend/`, `scripts/precompute_embeddings.py`로 사전계산 |
-| 라이브러리 곡 선택 → 무드 예측 → 추천 5곡 + 오디오 재생 | ✅ | "🔍 라이브러리 곡 예측" 탭, `st.audio` |
-| **내 오디오 파일 업로드 → 무드 예측 → 추천 5곡** | ✅ | "🎤 오디오 업로드" 탭 — 업로드 파일을 같은 모델로 멜스펙 추출 + 추론(`src/preprocessing/melspec.py:extract_melspec`), 임베딩을 라이브러리 임베딩과 코사인 유사도 비교(`top_k_similar_to_vector`) |
-| **텍스트로 기분 입력 → 무드 추정 → 추천 5곡** | ✅ | "💬 텍스트로 찾기" 탭 — 한국어 키워드 매칭으로 5개 태그 중 추정(`infer_mood_from_text`), 추정 무드에 대한 분류기 확률 상위 5곡 추천(`predict_mood_probs`) |
+| 라이브러리 곡 선택 → 무드 예측 → 추천 5곡 + 오디오 재생 | ✅ | "🔍 예측" 탭 → 입력 방식 "📂 라이브러리 곡 선택", `st.audio` |
+| **내 오디오 파일 업로드 → 무드 예측 → 추천 5곡** | ✅ | "🔍 예측" 탭 → 입력 방식 "🎤 오디오 업로드" — 업로드 파일을 같은 모델로 멜스펙 추출 + 추론(`src/preprocessing/melspec.py:extract_melspec`), 임베딩을 라이브러리 임베딩과 코사인 유사도 비교(`top_k_similar_to_vector`) |
+| **텍스트로 기분 입력 → 무드 추정 → 추천 5곡** | ✅ | "🔍 예측" 탭 → 입력 방식 "💬 텍스트로 찾기" — 한국어 키워드 매칭으로 5개 태그 중 추정(`infer_mood_from_text`), 추정 무드에 대한 분류기 확률 상위 5곡 추천(`predict_mood_probs`) |
 | EDA (태그 분포·재생시간 분포·멜스펙 예시) | ✅ | 앱 "데이터 탐색(EDA)" 탭, `scripts/compute_eda.py`로 사전계산 |
 | 클라우드 메모리 최적화 | ✅ | 임베딩 사전계산(`artifacts/embeddings.npy`) + 멜스펙 지연 로딩 (무료 티어 1GB OOM 방지) |
 | Streamlit Cloud 배포 | ✅ | Python 3.11 고정 필요 (아래 "배포" 참고) |
@@ -160,7 +160,7 @@ python scripts/compute_eda.py
 streamlit run app.py
 ```
 
-곡 선택 → "🔍 예측" 탭에서 무드 예측 결과 + 비슷한 무드 추천 5곡(오디오 재생 포함). "📊 모델 성능" 탭에서 학습된 모델의 F1/Accuracy/ROC-AUC 확인.
+"🔍 예측" 탭에서 입력 방식(라이브러리 곡 선택 / 오디오 업로드 / 텍스트로 찾기)을 고르면 무드 예측 결과 + 비슷한 무드 추천 5곡(오디오 재생 포함). "📊 모델 성능" 탭에서 학습된 모델의 F1/Accuracy/ROC-AUC 확인.
 
 ## 테스트
 
