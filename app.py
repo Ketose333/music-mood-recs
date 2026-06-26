@@ -155,8 +155,8 @@ def load_all_melspecs(manifest: pd.DataFrame):
 
 
 @st.cache_resource(max_entries=1)
-def compute_all_embeddings(model: MoodCNN, mels: np.ndarray):
-    return extract_embeddings(model, mels, batch_size=32, device="cpu")
+def compute_all_embeddings(_model: MoodCNN, mels: np.ndarray):
+    return extract_embeddings(_model, mels, batch_size=32, device="cpu")
 
 
 def _track_display(track_id: str, meta: pd.DataFrame, tags: list[str]) -> str:
