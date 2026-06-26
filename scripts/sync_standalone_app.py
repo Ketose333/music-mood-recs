@@ -23,7 +23,21 @@ APP_PY = Path("app.py")
 # (src file, [top-level def/class/assignment names to inline, in source order])
 BLOCKS: list[tuple[Path, list[str]]] = [
     (Path("src/models/cnn.py"), ["CNNConfig", "MoodCNN"]),
-    (Path("src/recommend/similar.py"), ["extract_embeddings", "top_k_similar"]),
+    (
+        Path("src/preprocessing/melspec.py"),
+        ["MelspecConfig", "load_segment", "compute_melspec", "extract_melspec"],
+    ),
+    (
+        Path("src/recommend/similar.py"),
+        [
+            "extract_embeddings",
+            "top_k_similar",
+            "top_k_similar_to_vector",
+            "predict_mood_probs",
+            "MOOD_KEYWORDS",
+            "infer_mood_from_text",
+        ],
+    ),
     (Path("src/evaluation/metrics.py"), ["build_comparison_table", "load_all_metrics"]),
 ]
 

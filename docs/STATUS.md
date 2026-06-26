@@ -42,6 +42,15 @@
 - [x] **버그 수정 3(OOM)** — Streamlit Community Cloud는 RAM 1GB만 보장하는데 기존 `app.py`가 시작 시 멜스펙 2,247개(~1.4GB)를 전부 메모리에 올려 OOM으로 크래시. `scripts/precompute_embeddings.py`로 임베딩을 오프라인 1회 계산해 `artifacts/embeddings.npy`(0.6MB)로 분리, 예측 시에는 선택한 1곡만 지연 로딩하도록 변경(`82fe973`). **로컬·클라우드 모두 정상 동작 확인됨.**
 - [x] 죽은 잔재 정리: `src/preprocess/`(빈 디렉터리), `models/cnn_synth/`(미참조 합성 테스트 아티팩트) 삭제.
 
+## Streamlit 데모 (app.py) — 오디오 업로드/텍스트 무드 검색 추가 (2026-06-26)
+
+기존 데모는 라이브러리에 있는 곡을 드롭다운으로 고르기만 할 수 있어("뭔지도 모르는 곡을 골라 비슷한 곡 5개만 보여줄 뿐") 사용자가 직접 자기 음악이나 기분을 입력할 수 없다는 한계가 있었음. 이를 해결하기 위해 탭 2개 추가:
+
+- [x] **🎤 오디오 업로드** — `st.file_uploader`로 사용자가 mp3/wav/ogg/flac/m4a 파일을 직접 올리면, 학습 때와 동일한 `extract_melspec`(`src/preprocessing/melspec.py`)으로 멜스펙트로그램을 즉석 추출 → 학습된 MoodCNN으로 무드 예측 + 임베딩 추출 → `top_k_similar_to_vector`(신규, `src/recommend/similar.py`)로 라이브러리 곡과 코사인 유사도 비교해 Top-5 추천.
+- [x] **💬 텍스트로 찾기** — 사용자가 기분을 한국어 문장으로 입력하면 `infer_mood_from_text`(신규)가 키워드 매칭으로 5개 태그 중 하나를 추정 → `predict_mood_probs`(신규)가 사전계산된 임베딩에 분류기 헤드(`model.classifier`)만 다시 태워 멜스펙 재로딩 없이 라이브러리 전체의 무드 확률을 구함 → 추정 무드 확률 상위 5곡 추천. 텍스트 → 무드 매핑은 별도 학습 모델이 아니라 휴리스틱 키워드 사전(README 참고)이며, 추천 자체는 기존 오디오 분류기의 출력을 재사용한다.
+- 변경 파일: `src/recommend/similar.py`(`top_k_similar_to_vector`/`predict_mood_probs`/`MOOD_KEYWORDS`/`infer_mood_from_text` 추가), `scripts/sync_standalone_app.py`(BLOCKS에 melspec/신규 similar 함수 추가), `app.py`(탭 2개 추가 + 동기화), `tests/test_similar.py`(신규 함수 4개 테스트 추가).
+- 검증: `python -m pytest tests/ -v` 29개 전체 PASS, `streamlit run app.py` 로컬 기동 후 HTTP 200 확인(수동 UI 클릭 테스트는 미실시 — 다음 세션에서 실제 오디오 업로드/텍스트 입력 케이스로 한 번 더 확인 권장).
+
 ## 보고서 PPT 데이터 갱신 (2026-06-26)
 
 - [x] `scripts/compute_eda.py` 버그 수정 — 함수 내 중복 `import os`로 `UnboundLocalError` 발생하던 문제 해결, 재실행해 `fig_tag_distribution.png`/`fig_duration_hist.png`/`fig_melspec_example.png` 재생성 완료.
@@ -56,6 +65,7 @@
 - [x] `app.py` Streamlit 데모 — 로컬 + Streamlit Cloud 배포 모두 정상 동작 확인
 - [x] 보고서 PPT 스크립트에 실데이터 학습 결과/그래프 반영 (`scripts/make_report.py`, `scripts/plot_training_curves.py`) — 코드는 완료, **실제 PPTX 생성은 템플릿 보유 PC에서 마무리 필요**
 - [ ] (다른 PC) 템플릿 파일 확보 → `python scripts/make_report.py` 실행 → PPTX 생성 확인
+- [ ] 신규 "🎤 오디오 업로드"/"💬 텍스트로 찾기" 탭을 Streamlit Cloud 배포본에서 실제 오디오 파일/문장으로 한 번 더 클릭 테스트(로컬 기동만 확인됨, librosa의 mp3 디코딩이 클라우드 환경에서도 동일하게 동작하는지 확인 필요)
 - [ ] 발표 시연 리허설 + `scripts/package_submission.py`로 zip 패키징 → 이메일 제출(ahnhg2000@gmail.com, 2026-07-01 09:00)
 
 ## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)
