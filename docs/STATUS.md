@@ -12,7 +12,7 @@
 | 오디오 전처리 | librosa + soundfile, 멜스펙트로그램 |
 | 추천 | scikit-learn(cosine_similarity), 임베딩 재사용 |
 | 데이터 | MTG-Jamendo 무드/테마 서브셋, `--max-tars 30` 기준으로 통일(README/app.py/노트북/보고서 전부 일치) |
-| Git 추적 정책 | `models/`·`artifacts/` 직접 추적(LFS 미사용). 수십MB 이상으로 커지면 `git lfs install` 재검토 |
+| Git 추적 정책 | `models/`만 git 직접 추적(소형). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`(~7GB)는 GitHub LFS 무료 한도(1GB) 초과로 제외, HF Hub 데이터셋 레포(`Ketose333/music-mood-recs-assets`)에 호스팅 — 배포 앱(`app.py`의 `_resolve()`)이 런타임에 `huggingface_hub`로 받아옴 |
 | 보고서 생성 의존성 | `python-pptx` (requirements.txt엔 없음 — `scripts/make_report.py` 실행 전 `pip install python-pptx` 필요, 배포 앱은 사용 안 함) |
 
 ## 데드라인

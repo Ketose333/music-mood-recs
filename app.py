@@ -292,6 +292,22 @@ MANIFEST_CSV = os.environ.get("MMR_MANIFEST", "artifacts/melspec_manifest.csv")
 META_CSV = os.environ.get("MMR_META", "artifacts/subset_meta.csv")
 EMBEDDINGS_NPY = os.environ.get("MMR_EMBEDDINGS", "artifacts/embeddings.npy")
 
+# data/audio and artifacts/melspecs are no longer tracked in this git repo
+# (they pushed GitHub's free LFS quota ~7x over) — they live in this public
+# HF dataset repo instead, keyed by the same relative path used locally
+# (e.g. "data/audio/00/12100.mp3", "artifacts/melspecs/00/12100.npy").
+HF_ASSETS_REPO = os.environ.get("MMR_HF_ASSETS_REPO", "Ketose333/music-mood-recs-assets")
+
+
+def _resolve(rel_path: str) -> str:
+    """Returns a local path usable for rel_path, downloading it from
+    HF_ASSETS_REPO on first access if it isn't already present on disk."""
+    if os.path.exists(rel_path):
+        return rel_path
+    from huggingface_hub import hf_hub_download
+
+    return hf_hub_download(repo_id=HF_ASSETS_REPO, repo_type="dataset", filename=rel_path.replace(os.sep, "/"))
+
 
 @st.cache_resource(max_entries=1)
 def load_model_artifacts(model_dir: str):
@@ -312,8 +328,8 @@ def load_model_artifacts(model_dir: str):
 
 @st.cache_data
 def load_manifest_and_meta(manifest_csv: str, meta_csv: str):
-    manifest = pd.read_csv(manifest_csv)
-    meta = pd.read_csv(meta_csv).set_index("TRACK_ID")
+    manifest = pd.read_csv(_resolve(manifest_csv))
+    meta = pd.read_csv(_resolve(meta_csv)).set_index("TRACK_ID")
     return manifest, meta
 
 
@@ -327,7 +343,7 @@ def load_embeddings(embeddings_npy: str, manifest: pd.DataFrame) -> np.ndarray:
     would OOM-kill the app, so that forward pass happens offline instead and
     only this small embeddings array is loaded here.
     """
-    embeddings = np.load(embeddings_npy)
+    embeddings = np.load(_resolve(embeddings_npy))
     if len(embeddings) != len(manifest):
         raise ValueError(
             f"embeddings ({len(embeddings)}) and manifest ({len(manifest)}) row counts differ — "
@@ -340,7 +356,7 @@ def load_embeddings(embeddings_npy: str, manifest: pd.DataFrame) -> np.ndarray:
 def load_mel(npy_path: str) -> np.ndarray:
     """Lazily loads a single track's mel-spectrogram (only the selected track,
     never the full dataset — see load_embeddings for why)."""
-    return np.load(npy_path).astype(np.float32)
+    return np.load(_resolve(npy_path)).astype(np.float32)
 
 
 def _track_display(track_id: str, meta: pd.DataFrame, tags: list[str]) -> str:
@@ -355,8 +371,11 @@ def _audio_path(track_id: str, manifest: pd.DataFrame) -> str | None:
     rows = manifest.loc[manifest["TRACK_ID"] == track_id, "PATH"]
     if rows.empty:
         return None
-    path = os.path.join(AUDIO_DIR, rows.iloc[0])
-    return path if os.path.exists(path) else None
+    rel_path = os.path.join(AUDIO_DIR, rows.iloc[0])
+    try:
+        return _resolve(rel_path)
+    except Exception:
+        return None
 
 
 _MOOD_EMOJI = {

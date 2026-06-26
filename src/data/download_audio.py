@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import tarfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
 
 import pandas as pd
 import requests
@@ -84,8 +85,18 @@ def download_tar(idx: int, dest_dir: str, max_retries: int = 5) -> str:
     raise RuntimeError(f"Failed to download {filename} after {max_retries} attempts")
 
 
-def extract_subset_from_tar(tar_path: str, out_dir: str, wanted_paths: set[str]) -> int:
+def extract_subset_from_tar(
+    tar_path: str,
+    out_dir: str,
+    wanted_paths: set[str],
+    hf_repo_id: str | None = None,
+    hf_path_prefix: str = "data/audio",
+) -> int:
+    """Extract wanted members from tar_path. If hf_repo_id is set, members are
+    uploaded directly to that HF dataset repo (one commit per TAR) instead of
+    being written under out_dir — nothing besides the TAR itself touches disk."""
     extracted = 0
+    operations = [] if hf_repo_id else None
     with tarfile.open(tar_path) as tar:
         for m in tar.getmembers():
             if not m.isfile():
@@ -98,22 +109,59 @@ def extract_subset_from_tar(tar_path: str, out_dir: str, wanted_paths: set[str])
             src = tar.extractfile(m)
             if src is None:
                 continue
-            dest_path = os.path.join(out_dir, rel)
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-            with open(dest_path, "wb") as f:
-                f.write(src.read())
+            data = src.read()
+            if hf_repo_id:
+                from huggingface_hub import CommitOperationAdd
+
+                operations.append(
+                    CommitOperationAdd(path_in_repo=f"{hf_path_prefix}/{rel}", path_or_fileobj=BytesIO(data))
+                )
+            else:
+                dest_path = os.path.join(out_dir, rel)
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                with open(dest_path, "wb") as f:
+                    f.write(data)
             extracted += 1
+    if hf_repo_id and operations:
+        from huggingface_hub import HfApi
+
+        HfApi().create_commit(
+            repo_id=hf_repo_id,
+            repo_type="dataset",
+            operations=operations,
+            commit_message=f"Add subset tracks from {os.path.basename(tar_path)}",
+        )
     return extracted
 
 
 def download_and_extract_subset(
-    subset: dict[str, pd.DataFrame], out_dir: str, max_tars: int, parallel: int = 3
+    subset: dict[str, pd.DataFrame],
+    out_dir: str,
+    max_tars: int,
+    parallel: int = 3,
+    hf_repo_id: str | None = None,
+    hf_path_prefix: str = "data/audio",
 ) -> tuple[int, int]:
     """Download+extract TARs 00..max_tars-1, skipping folders whose subset
-    tracks are already on disk. Returns (total_extracted, total_wanted)."""
+    tracks are already extracted. Returns (total_extracted, total_wanted).
+
+    If hf_repo_id is set, extracted tracks are uploaded straight to that HF
+    dataset repo and never written under out_dir, so the "already extracted"
+    check below looks at the repo's file list instead of the local disk."""
     os.makedirs(out_dir, exist_ok=True)
     wanted = subset_path_set(subset)
     print(f"Total unique audio paths to extract: {len(wanted)}", flush=True)
+
+    if hf_repo_id:
+        from huggingface_hub import HfApi
+
+        remote_files = set(HfApi().list_repo_files(repo_id=hf_repo_id, repo_type="dataset"))
+
+        def already_done(p: str) -> bool:
+            return f"{hf_path_prefix}/{p}" in remote_files
+    else:
+        def already_done(p: str) -> bool:
+            return os.path.exists(os.path.join(out_dir, p))
 
     folder_wanted: dict[int, set[str]] = {}
     tar_indices: list[int] = []
@@ -122,7 +170,7 @@ def download_and_extract_subset(
         folder = f"{idx:02d}"
         paths = {p for p in wanted if p.startswith(f"{folder}/")}
         folder_wanted[idx] = paths
-        if paths and all(os.path.exists(os.path.join(out_dir, p)) for p in paths):
+        if paths and all(already_done(p) for p in paths):
             already_extracted += len(paths)
             print(f"  TAR {idx:02d}: {len(paths)} subset tracks already extracted, skipping", flush=True)
             continue
@@ -149,7 +197,9 @@ def download_and_extract_subset(
         if idx not in tar_paths:
             print(f"  TAR {idx:02d}: skipped (download failed)", flush=True)
             continue
-        n = extract_subset_from_tar(tar_paths[idx], out_dir, folder_wanted[idx])
+        n = extract_subset_from_tar(
+            tar_paths[idx], out_dir, folder_wanted[idx], hf_repo_id=hf_repo_id, hf_path_prefix=hf_path_prefix
+        )
         total_extracted += n
         print(f"  TAR {idx:02d}: extracted {n} tracks (cumulative {total_extracted})", flush=True)
         os.remove(tar_paths[idx])
