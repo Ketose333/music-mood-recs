@@ -24,6 +24,7 @@ APP_PY = Path("app.py")
 BLOCKS: list[tuple[Path, list[str]]] = [
     (Path("src/models/cnn.py"), ["CNNConfig", "MoodCNN"]),
     (Path("src/recommend/similar.py"), ["extract_embeddings", "top_k_similar"]),
+    (Path("src/evaluation/metrics.py"), ["build_comparison_table", "load_all_metrics"]),
 ]
 
 
