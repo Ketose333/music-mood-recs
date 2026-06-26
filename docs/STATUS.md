@@ -34,11 +34,19 @@
 - [x] **테스트셋 미사용**: 학습 셀과 시각화 셀 사이에 "6.5 테스트셋 평가" 셀 신설. `test_ds`(615곡)로 held-out 평가 후 `metrics.json`에 `test` 키로 저장.
 - [x] (낮은 우선순위) 멜스펙 추출 셀에 누락 비율 5% 초과 시 경고 출력 로직 추가.
 
+## Streamlit 데모 (app.py) — 2026-06-26 보강 완료
+
+- [x] UI를 review-sentiment와 1:1 대응(탭 4개: 🔍 예측 / 📊 모델 성능 / 📈 데이터 탐색(EDA) / ℹ️ 프로젝트 소개), 곡 선택·추천 결과에 `st.audio` 오디오 재생 추가.
+- [x] **버그 수정 1** — `st.cache_resource`가 `MoodCNN` 인스턴스를 해싱하려다 실패(`Cannot hash argument 'model'`) → 인자명에 언더스코어(`_model`)로 수정(`2a935cb`).
+- [x] **버그 수정 2(크로스플랫폼)** — `melspec_manifest.csv`의 `npy_path`가 Windows 백슬래시(`artifacts\00\12100.npy`)로 저장돼 Streamlit Cloud(Linux)에서 파일을 못 찾던 문제. `src/preprocessing/melspec.py`가 항상 forward-slash로 저장하도록 수정 + 기존 CSV/노트북 일괄 정규화(`a088d6f`, `af2b8d0`).
+- [x] **버그 수정 3(OOM)** — Streamlit Community Cloud는 RAM 1GB만 보장하는데 기존 `app.py`가 시작 시 멜스펙 2,247개(~1.4GB)를 전부 메모리에 올려 OOM으로 크래시. `scripts/precompute_embeddings.py`로 임베딩을 오프라인 1회 계산해 `artifacts/embeddings.npy`(0.6MB)로 분리, 예측 시에는 선택한 1곡만 지연 로딩하도록 변경(`82fe973`). **로컬·클라우드 모두 정상 동작 확인됨.**
+- [x] 죽은 잔재 정리: `src/preprocess/`(빈 디렉터리), `models/cnn_synth/`(미참조 합성 테스트 아티팩트) 삭제.
+
 ## 남은 작업 (P0, 데드라인 내 필수)
 
 - [x] 노트북 끝까지 실행 — 멜스펙 추출 + CNN 재학습 + 테스트셋 평가(완료, `c2c1579`)
 - [x] 재학습 결과로 `models/cnn/metrics.json` 갱신 확인(test 성능 포함)
-- [ ] `app.py` Streamlit 데모 실행 확인 — 새 `model.pt`/`tags.json`(5개 무드 태그)으로 정상 예측/추천되는지 점검
+- [x] `app.py` Streamlit 데모 — 로컬 + Streamlit Cloud 배포 모두 정상 동작 확인
 - [ ] 보고서 PPT에 실데이터 학습 결과/그래프 삽입 (`scripts/make_report.py`) — best val F1(micro)=0.2977, test F1(micro)=0.2642 반영
 - [ ] 발표 시연 리허설 + `scripts/package_submission.py`로 zip 패키징 → 이메일 제출(ahnhg2000@gmail.com, 2026-07-01 09:00)
 
@@ -53,4 +61,4 @@
 | --- | --- |
 | CPU 학습 시간 | 6일 데드라인 내 단순 CNN만 |
 | 분류 임베딩 → 추천 재사용 가정 미검증 | 재학습 후 정성 평가 필요 |
-| Streamlit Cloud 무료 티어 메모리 | 배포 시 `st.cache_resource` 캐싱 전략 점검 필요 |
+| 모델 성능 낮음(test F1-micro 0.2642) | 보고서에 "후속 개선점"으로 서술(CRNN 확장 등), 이번 제출에서는 시간상 스킵 |
