@@ -142,7 +142,10 @@ def extract_subset_melspecs(
                 "PATH": rel,
                 "DURATION": row["DURATION"],
                 "split": row["split"],
-                "npy_path": cache_path,
+                # Always store forward slashes: this CSV is read back on whatever OS
+                # the demo/training runs on (e.g. generated on Windows, deployed on
+                # Streamlit Cloud's Linux) and os.sep("\\") is not a path separator there.
+                "npy_path": cache_path.replace(os.sep, "/"),
                 "n_mels": mel.shape[0],
                 "n_frames": mel.shape[1],
             }
