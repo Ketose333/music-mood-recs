@@ -9,8 +9,11 @@ from __future__ import annotations
 import glob
 import json
 import os
+import tempfile
 from dataclasses import dataclass
+from typing import Optional
 
+import librosa
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -70,6 +73,80 @@ class MoodCNN(nn.Module):
 # <<< AUTO-SYNCED <<<
 
 
+# >>> AUTO-SYNCED from src/preprocessing/melspec.py (run scripts/sync_standalone_app.py) >>>
+@dataclass(frozen=True)
+class MelspecConfig:
+    sr: int = 22050
+    n_mels: int = 128
+    n_fft: int = 2048
+    hop_length: int = 512
+    segment_seconds: float = 30.0
+    offset_mode: str = "start"  # "start" or "center"
+    top_db: float = 80.0
+
+    @property
+    def segment_samples(self) -> int:
+        return int(self.sr * self.segment_seconds)
+
+    @property
+    def expected_frames(self) -> int:
+        # librosa default center=True pads n_fft//2 on each side, so
+        # n_frames = 1 + n_samples // hop_length.
+        return 1 + self.segment_samples // self.hop_length
+
+
+def load_segment(
+    audio_path: str, cfg: MelspecConfig, duration_cap: Optional[float] = None
+) -> np.ndarray:
+    """Load a fixed 30-second mono segment as a 1D float32 numpy array."""
+    total_duration = duration_cap
+    if total_duration is None:
+        try:
+            total_duration = float(librosa.get_duration(path=audio_path))
+        except Exception:
+            total_duration = cfg.segment_seconds
+    if cfg.offset_mode == "center" and total_duration > cfg.segment_seconds:
+        offset = (total_duration - cfg.segment_seconds) / 2.0
+    else:
+        offset = 0.0
+    y, _ = librosa.load(
+        audio_path,
+        sr=cfg.sr,
+        mono=True,
+        offset=offset,
+        duration=cfg.segment_seconds,
+    )
+    target = cfg.segment_samples
+    if len(y) < target:
+        y = np.pad(y, (0, target - len(y)), mode="constant")
+    elif len(y) > target:
+        y = y[:target]
+    return y.astype(np.float32)
+
+
+def compute_melspec(y: np.ndarray, cfg: MelspecConfig) -> np.ndarray:
+    """Compute a log-mel spectrogram (n_mels, n_frames) from a 1D waveform."""
+    mel = librosa.feature.melspectrogram(
+        y=y,
+        sr=cfg.sr,
+        n_fft=cfg.n_fft,
+        hop_length=cfg.hop_length,
+        n_mels=cfg.n_mels,
+    )
+    log_mel = librosa.power_to_db(mel, ref=np.max, top_db=cfg.top_db)
+    return log_mel.astype(np.float32)
+
+
+def extract_melspec(
+    audio_path: str, cfg: Optional[MelspecConfig] = None
+) -> np.ndarray:
+    """Load segment + compute log-mel spectrogram in one call."""
+    cfg = cfg or MelspecConfig()
+    y = load_segment(audio_path, cfg)
+    return compute_melspec(y, cfg)
+# <<< AUTO-SYNCED <<<
+
+
 # >>> AUTO-SYNCED from src/recommend/similar.py (run scripts/sync_standalone_app.py) >>>
 @torch.no_grad()
 def extract_embeddings(
@@ -111,6 +188,60 @@ def top_k_similar(
         order = order[order != query_idx]
     top = order[:k]
     return top, sims[top]
+
+
+def top_k_similar_to_vector(
+    query_embedding: np.ndarray,
+    embeddings: np.ndarray,
+    k: int = 5,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Same ranking as ``top_k_similar`` but for a query embedding that is not
+    already a row of ``embeddings`` (e.g. a user-uploaded track)."""
+    query = np.asarray(query_embedding, dtype=np.float32).reshape(1, -1)
+    sims = cosine_similarity(query, embeddings).ravel()
+    order = np.argsort(-sims)
+    top = order[:k]
+    return top, sims[top]
+
+
+@torch.no_grad()
+def predict_mood_probs(model: MoodCNN, embeddings: np.ndarray) -> np.ndarray:
+    """Run the trained classifier head on precomputed embeddings to get each
+    track's mood probabilities without re-loading any mel-spectrogram.
+
+    ``model.embed`` already produced ``embeddings``, so this only replays the
+    final linear layer (``model.classifier``) — cheap enough to run over the
+    whole library at app start-up.
+    """
+    model.eval()
+    z = torch.from_numpy(np.asarray(embeddings, dtype=np.float32))
+    logits = model.classifier(z)
+    return torch.sigmoid(logits).numpy()
+
+
+MOOD_KEYWORDS: dict[str, list[str]] = {
+    "happy": ["행복", "기쁘", "기뻐", "즐겁", "신나", "설레", "웃음", "웃기", "들뜨", "유쾌"],
+    "energetic": ["에너지", "파워", "운동", "헬스", "달리", "파이팅", "격렬", "흥분", "활기", "신남"],
+    "relaxing": ["편안", "휴식", "잠", "졸려", "힐링", "차분", "여유", "평화", "느긋", "안정"],
+    "film": ["영화", "웅장", "드라마틱", "서사", "영상", "스토리", "장엄", "긴장감", "몰입"],
+    "dark": ["우울", "슬픔", "슬프", "어둡", "외롭", "쓸쓸", "그리움", "눈물", "힘들", "지치", "불안"],
+}
+
+
+def infer_mood_from_text(text: str, tags: list[str]) -> tuple[str | None, dict[str, int]]:
+    """Score ``text`` against each tag's keyword list and return the
+    best-matching tag (``None`` if no keyword hits at all) plus the raw
+    per-tag hit counts, so the caller can show why a tag was picked.
+    """
+    counts = {tag: 0 for tag in tags}
+    for tag in tags:
+        for kw in MOOD_KEYWORDS.get(tag, []):
+            if kw in text:
+                counts[tag] += 1
+    best_tag = max(counts, key=counts.get) if counts else None
+    if best_tag is not None and counts[best_tag] == 0:
+        best_tag = None
+    return best_tag, counts
 # <<< AUTO-SYNCED <<<
 
 
@@ -271,8 +402,35 @@ with st.sidebar:
 
 st.success(f"모델 로드 완료 — {len(track_ids)}곡, 태그: {', '.join(tags)}")
 
-tab_predict, tab_compare, tab_eda, tab_about = st.tabs(
-    ["🔍 예측", "📊 모델 성능", "📈 데이터 탐색(EDA)", "ℹ️ 프로젝트 소개"]
+def _render_recommendations(idxs: np.ndarray, sims: np.ndarray, score_label: str = "코사인 유사도") -> None:
+    for i, sim in zip(idxs, sims):
+        tid = track_ids[i]
+        with st.container(border=True):
+            rec_col_info, rec_col_audio = st.columns([2, 1])
+            rec_col_info.markdown(f"**{_track_display(tid, meta, tags)}**")
+            rec_col_info.caption(f"{score_label} {sim:.4f}")
+            rec_audio = _audio_path(tid, manifest)
+            if rec_audio:
+                rec_col_audio.audio(rec_audio)
+
+
+def _render_mood_probs(probs: np.ndarray) -> str:
+    top_mood = tags[int(probs.argmax())]
+    st.metric("최상위 무드", f"{_MOOD_EMOJI.get(top_mood, '')} {top_mood}", f"{probs.max():.1%}")
+    for tag, prob in sorted(zip(tags, probs), key=lambda t: -t[1]):
+        st.progress(float(prob), text=f"{_MOOD_EMOJI.get(tag, '')} {tag} {prob:.0%}")
+    return top_mood
+
+
+tab_predict, tab_upload, tab_text, tab_compare, tab_eda, tab_about = st.tabs(
+    [
+        "🔍 라이브러리 곡 예측",
+        "🎤 오디오 업로드",
+        "💬 텍스트로 찾기",
+        "📊 모델 성능",
+        "📈 데이터 탐색(EDA)",
+        "ℹ️ 프로젝트 소개",
+    ]
 )
 
 with tab_predict:
@@ -300,23 +458,65 @@ with tab_predict:
 
         with col_out:
             st.subheader("예측 무드")
-            top_mood = tags[int(probs.argmax())]
-            st.metric("최상위 무드", f"{_MOOD_EMOJI.get(top_mood, '')} {top_mood}", f"{probs.max():.1%}")
-            for tag, prob in sorted(zip(tags, probs), key=lambda t: -t[1]):
-                st.progress(float(prob), text=f"{_MOOD_EMOJI.get(tag, '')} {tag} {prob:.0%}")
+            _render_mood_probs(probs)
 
             st.divider()
             st.subheader("비슷한 무드의 곡 Top-5")
             idxs, sims = top_k_similar(selected, embeddings, k=5)
-            for i, sim in zip(idxs, sims):
-                tid = track_ids[i]
-                with st.container(border=True):
-                    rec_col_info, rec_col_audio = st.columns([2, 1])
-                    rec_col_info.markdown(f"**{_track_display(tid, meta, tags)}**")
-                    rec_col_info.caption(f"코사인 유사도 {sim:.4f}")
-                    rec_audio = _audio_path(tid, manifest)
-                    if rec_audio:
-                        rec_col_audio.audio(rec_audio)
+            _render_recommendations(idxs, sims)
+
+with tab_upload:
+    st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 라이브러리에서 비슷한 곡 5개를 추천받습니다.")
+    uploaded = st.file_uploader("오디오 파일 업로드 (mp3/wav/ogg/flac)", type=["mp3", "wav", "ogg", "flac", "m4a"])
+
+    if uploaded is not None:
+        st.audio(uploaded)
+        with st.spinner("멜스펙트로그램 추출 + 무드 예측 중..."):
+            suffix = os.path.splitext(uploaded.name)[1] or ".mp3"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(uploaded.getvalue())
+                tmp_path = tmp.name
+            try:
+                mel = extract_melspec(tmp_path, MelspecConfig(n_mels=cfg.n_mels))
+                x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
+                with torch.no_grad():
+                    z = model.embed(x)
+                    probs = torch.sigmoid(model.classifier(z))[0].numpy()
+                query_embedding = z[0].numpy()
+            finally:
+                os.remove(tmp_path)
+
+        col_in, col_out = st.columns([1, 2])
+        with col_in:
+            st.subheader("예측 무드")
+            _render_mood_probs(probs)
+        with col_out:
+            st.subheader("비슷한 무드의 곡 Top-5")
+            idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
+            _render_recommendations(idxs, sims)
+
+with tab_text:
+    st.caption("지금 기분이나 원하는 분위기를 문장으로 입력하면, 가장 가까운 무드를 추정해 그 무드에 맞는 곡을 추천합니다.")
+    text_input = st.text_input("지금 기분이 어떤가요?", placeholder="예: 오늘 너무 우울하고 힘들어서 위로받을 음악 듣고 싶어")
+    text_clicked = st.button("무드 찾기", use_container_width=True)
+
+    if text_clicked:
+        if not text_input.strip():
+            st.warning("문장을 입력해주세요.")
+        else:
+            best_tag, keyword_hits = infer_mood_from_text(text_input, tags)
+            if best_tag is None:
+                best_tag = tags[0]
+
+            st.success(f"추정된 무드: {_MOOD_EMOJI.get(best_tag, '')} **{best_tag}** (키워드 매칭 {keyword_hits[best_tag]}건)")
+            st.caption(f"태그별 키워드 매칭 수: {keyword_hits}")
+
+            track_probs = predict_mood_probs(model, embeddings)
+            tag_idx = tags.index(best_tag)
+            order = np.argsort(-track_probs[:, tag_idx])[:5]
+            sims = track_probs[order, tag_idx]
+            st.subheader(f"'{best_tag}' 무드에 가장 잘 맞는 곡 Top-5")
+            _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
 
 with tab_compare:
     all_metrics = load_all_metrics()
@@ -359,7 +559,9 @@ with tab_about:
     st.markdown(
         "MTG-Jamendo 무드/테마 서브셋의 멜스펙트로그램으로 CNN 무드 분류 모델을 학습하고, "
         "분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천합니다. "
-        "분류와 추천을 별도 파이프라인으로 이어붙이지 않고 하나의 모델로 증명하는 DL 포트폴리오 프로젝트입니다."
+        "분류와 추천을 별도 파이프라인으로 이어붙이지 않고 하나의 모델로 증명하는 DL 포트폴리오 프로젝트입니다.\n\n"
+        "라이브러리에 있는 곡을 고르는 것뿐 아니라, **직접 가진 오디오 파일을 업로드**해 동일한 모델로 무드를 예측하거나, "
+        "**지금 기분을 문장으로 입력**해 그 무드에 맞는 곡을 찾을 수도 있습니다(🎤 오디오 업로드 / 💬 텍스트로 찾기 탭)."
     )
     stat_cols = st.columns(3)
     stat_cols[0].metric("데이터", "MTG-Jamendo")

@@ -6,7 +6,13 @@ import numpy as np
 import torch
 
 from src.models.cnn import CNNConfig, MoodCNN
-from src.recommend.similar import extract_embeddings, top_k_similar
+from src.recommend.similar import (
+    extract_embeddings,
+    infer_mood_from_text,
+    predict_mood_probs,
+    top_k_similar,
+    top_k_similar_to_vector,
+)
 
 
 def test_extract_embeddings_shape():
@@ -44,3 +50,41 @@ def test_top_k_similar_respects_k_and_exclude_query():
     assert len(idx) == 5
     assert 5 not in idx
     assert len(sims) == 5
+
+
+def test_top_k_similar_to_vector_ranks_by_cosine_similarity():
+    embeddings = np.array(
+        [[1.0, 0.0], [0.9, 0.1], [0.0, 1.0], [0.95, 0.05], [0.1, 0.9]],
+        dtype=np.float32,
+    )
+    query = np.array([1.0, 0.0], dtype=np.float32)
+    idx, sims = top_k_similar_to_vector(query, embeddings, k=3)
+    assert idx[0] == 0  # exact match stays in (no query exclusion for external vectors)
+    assert idx[1] == 3
+    assert np.all(np.diff(sims) <= 0)
+
+
+def test_predict_mood_probs_matches_classifier_head():
+    cfg = CNNConfig(n_mels=64, embedding_dim=8, n_classes=3)
+    model = MoodCNN(cfg)
+    embeddings = np.random.RandomState(2).randn(4, cfg.embedding_dim).astype(np.float32)
+
+    probs = predict_mood_probs(model, embeddings)
+
+    expected = torch.sigmoid(model.classifier(torch.from_numpy(embeddings))).detach().numpy()
+    assert probs.shape == (4, cfg.n_classes)
+    np.testing.assert_allclose(probs, expected, atol=1e-6)
+
+
+def test_infer_mood_from_text_matches_keyword():
+    tags = ["happy", "energetic", "relaxing", "film", "dark"]
+    tag, hits = infer_mood_from_text("오늘 너무 우울하고 힘들어서 위로받을 음악 듣고 싶어", tags)
+    assert tag == "dark"
+    assert hits["dark"] > 0
+
+
+def test_infer_mood_from_text_returns_none_when_no_keyword_hits():
+    tags = ["happy", "energetic", "relaxing", "film", "dark"]
+    tag, hits = infer_mood_from_text("ㅁㄴㅇㄹ123", tags)
+    assert tag is None
+    assert all(v == 0 for v in hits.values())
