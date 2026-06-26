@@ -260,7 +260,7 @@ with st.sidebar:
 st.success(f"모델 로드 완료 — {len(track_ids)}곡, 태그: {', '.join(tags)}")
 
 tab_predict, tab_compare, tab_eda, tab_about = st.tabs(
-    ["🔍 무드 예측 + 추천", "📊 모델 성능", "📈 데이터 탐색(EDA)", "ℹ️ 프로젝트 소개"]
+    ["🔍 예측", "📊 모델 성능", "📈 데이터 탐색(EDA)", "ℹ️ 프로젝트 소개"]
 )
 
 with tab_predict:
