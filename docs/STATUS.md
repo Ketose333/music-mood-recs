@@ -20,10 +20,10 @@
 
 ## 현재 상태 (2026-06-26)
 
-- `submission/music_mood_recs.ipynb` — 30 TAR 기준으로 재생성 완료(자체 완결, src import 없음). 학습 셀의 `torch.save`는 Windows 파일잠금(에러 1224) 재발 방지를 위해 `safe_torch_save`(임시파일+원자적 교체+재시도)로 교체됨. 아래 "노트북 점검 결과" 항목 모두 반영 완료. **사용자가 직접 실행해 다운로드~재학습까지 완료할 예정.**
-- 오디오 다운로드/추출: TAR 00~29 전체 완료 확인(`data/audio/26~29`, `artifacts/melspecs/26~29`에 파일 존재, `subset_meta.csv`/`melspec_manifest.csv` 2,247행으로 갱신됨). 더 이상 재시도 불필요.
-- `models/cnn/` — 아직 20 TAR(1,508곡) 기준 모델(최신 아님). 30 TAR 데이터로 재학습 필요(사용자 직접 수행).
-- 노트북을 끝까지 실행하기 전까지는 README/STATUS의 "30 TAR" 서술과 실제 모델 학습 데이터가 다를 수 있음 — 완주 후 일치.
+- `submission/music_mood_recs.ipynb` — 30 TAR 기준 전체 실행 완료(다운로드~멜스펙 추출~CNN 재학습~테스트셋 평가까지 사용자 직접 완주).
+- 오디오 다운로드/추출: TAR 00~29 전체 완료(`subset_meta.csv`/`melspec_manifest.csv` 2,247행).
+- `models/cnn/` — 30 TAR 데이터로 재학습 완료. `metrics.json` 기준 **best val F1(micro)=0.2977**, **test F1(micro)=0.2642 / accuracy=0.1659 / ROC-AUC=0.7456**(태그: happy/energetic/relaxing/film/dark). 커밋·푸시 완료(`c2c1579`).
+- README/STATUS의 "30 TAR" 서술과 실제 모델 학습 데이터가 이제 일치함.
 
 ## 노트북 점검 결과 처리 완료 (2026-06-26)
 
@@ -36,10 +36,11 @@
 
 ## 남은 작업 (P0, 데드라인 내 필수)
 
-- [ ] 노트북 끝까지 실행 — 멜스펙 추출 + CNN 재학습(사용자 직접 수행)
-- [ ] 재학습 결과로 `models/cnn/metrics.json` 갱신 확인(test 성능 포함)
-- [ ] 보고서 PPT에 실데이터 학습 결과/그래프 삽입 (`scripts/make_report.py`)
-- [ ] 발표 시연 리허설 + `scripts/package_submission.py`로 zip 패키징 → 이메일 제출
+- [x] 노트북 끝까지 실행 — 멜스펙 추출 + CNN 재학습 + 테스트셋 평가(완료, `c2c1579`)
+- [x] 재학습 결과로 `models/cnn/metrics.json` 갱신 확인(test 성능 포함)
+- [ ] `app.py` Streamlit 데모 실행 확인 — 새 `model.pt`/`tags.json`(5개 무드 태그)으로 정상 예측/추천되는지 점검
+- [ ] 보고서 PPT에 실데이터 학습 결과/그래프 삽입 (`scripts/make_report.py`) — best val F1(micro)=0.2977, test F1(micro)=0.2642 반영
+- [ ] 발표 시연 리허설 + `scripts/package_submission.py`로 zip 패키징 → 이메일 제출(ahnhg2000@gmail.com, 2026-07-01 09:00)
 
 ## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)
 
