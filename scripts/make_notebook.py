@@ -157,7 +157,10 @@ code(
     "melspec_manifest, missing = extract_subset_melspecs(\n"
     "    meta_csv='artifacts/subset_meta.csv', audio_dir='data/audio', out_dir='artifacts/melspecs', cfg=cfg)\n"
     "melspec_manifest.to_csv(MANIFEST_CSV, index=False)\n"
-    "print(f'Manifest: {len(melspec_manifest)} tracks -> {MANIFEST_CSV} (missing audio: {missing})')\n\n"
+    "print(f'Manifest: {len(melspec_manifest)} tracks -> {MANIFEST_CSV} (missing audio: {missing})')\n"
+    "missing_ratio = missing / (len(melspec_manifest) + missing) if (len(melspec_manifest) + missing) else 0\n"
+    "if missing_ratio > 0.05:\n"
+    "    print(f'경고: 누락 비율 {missing_ratio:.1%} — 오디오 다운로드 상태를 확인하세요.')\n\n"
     "example_mel = np.load(melspec_manifest.iloc[0]['npy_path'])\n"
     "print('melspec shape:', example_mel.shape)\n"
     "plt.imshow(example_mel, aspect='auto', origin='lower', cmap='magma')\n"
@@ -198,6 +201,20 @@ code(
     + inline_module("src/evaluation/metrics.py")
     + "\n"
     "MODEL_OUT = 'models/cnn'\n"
+    "import time\n"
+    "def safe_torch_save(obj, path, max_retries=5):\n"
+    "    # temp file + atomic rename, retries on transient Windows file locks\n"
+    "    # (e.g. antivirus briefly scanning the freshly written file)\n"
+    "    tmp_path = path + '.tmp'\n"
+    "    for attempt in range(1, max_retries + 1):\n"
+    "        try:\n"
+    "            torch.save(obj, tmp_path)\n"
+    "            os.replace(tmp_path, path)\n"
+    "            return\n"
+    "        except RuntimeError:\n"
+    "            if attempt == max_retries:\n"
+    "                raise\n"
+    "            time.sleep(1)\n\n"
     "manifest = 'artifacts/melspec_manifest.csv'\n"
     "subset_meta = 'artifacts/subset_meta.csv'\n"
     "if not os.path.exists(manifest) or not os.path.exists(subset_meta):\n"
@@ -240,7 +257,7 @@ code(
     "        history.append({'epoch': epoch, 'train_loss': round(train_loss, 4), **val_metrics})\n"
     "        if val_metrics['f1_micro'] > best_val_f1:\n"
     "            best_val_f1 = val_metrics['f1_micro']\n"
-    "            torch.save(model.state_dict(), os.path.join(MODEL_OUT, 'model.pt'))\n"
+    "            safe_torch_save(model.state_dict(), os.path.join(MODEL_OUT, 'model.pt'))\n"
     "            print(f'  -> saved best model (val_f1_micro={best_val_f1:.4f})')\n\n"
     "    with open(os.path.join(MODEL_OUT, 'tags.json'), 'w', encoding='utf-8') as f:\n"
     "        json.dump(tags, f, ensure_ascii=False, indent=2)\n"
@@ -249,6 +266,29 @@ code(
     "    with open(os.path.join(MODEL_OUT, 'metrics.json'), 'w', encoding='utf-8') as f:\n"
     "        json.dump({'best_val_f1_micro': best_val_f1, 'history': history, 'tags': tags}, f, ensure_ascii=False, indent=2)\n"
     "    print(f'학습 완료. Best val F1(micro)={best_val_f1:.4f}. Artifacts in {MODEL_OUT}')")
+
+# ===== 7.5 테스트셋 평가 =====
+md("## 6.5 테스트셋 평가 (held-out)\n\n"
+   "학습/검증에 전혀 사용되지 않은 test split으로 최종 일반화 성능을 확인한다.")
+code(
+    "if train_ds is not None:\n"
+    "    model.load_state_dict(torch.load(os.path.join(MODEL_OUT, 'model.pt'), map_location='cpu'))\n"
+    "    model.eval()\n"
+    "    test_ds = MelspecDataset(manifest, subset_meta, tags, 'test')\n"
+    "    print(f'test: {len(test_ds)}')\n"
+    "    test_loader = DataLoader(test_ds, batch_size=32, shuffle=False, num_workers=0)\n"
+    "    all_logits, all_labels = [], []\n"
+    "    with torch.no_grad():\n"
+    "        for x, y, _ in test_loader:\n"
+    "            all_logits.append(model(x).numpy())\n"
+    "            all_labels.append(y.numpy())\n"
+    "    test_metrics = compute_metrics(np.concatenate(all_logits), np.concatenate(all_labels))\n"
+    "    print('test set 성능:', test_metrics)\n"
+    "    with open(os.path.join(MODEL_OUT, 'metrics.json'), encoding='utf-8') as f:\n"
+    "        saved_metrics = json.load(f)\n"
+    "    saved_metrics['test'] = test_metrics\n"
+    "    with open(os.path.join(MODEL_OUT, 'metrics.json'), 'w', encoding='utf-8') as f:\n"
+    "        json.dump(saved_metrics, f, ensure_ascii=False, indent=2)")
 
 # ===== 8. 학습 과정 시각화 =====
 md("## 7. 학습 과정 시각화\n\n"
@@ -289,7 +329,12 @@ code(
     "    model.eval()\n"
     "    man = pd.read_csv(manifest)\n"
     "    all_mels = np.stack([np.load(p) for p in man['npy_path']])\n"
-    "    track_ids = man['TRACK_ID'].tolist()\n"
+    "    track_ids = man['TRACK_ID'].tolist()\n\n"
+    "    sample_x = torch.from_numpy(all_mels[0:1]).unsqueeze(1)\n"
+    "    with torch.no_grad():\n"
+    "        probs = torch.sigmoid(model(sample_x))[0].numpy()\n"
+    "    top_moods = sorted(zip(tags, probs), key=lambda t: -t[1])[:5]\n"
+    "    print(f'{track_ids[0]} 무드 예측 top-5:', [(t, round(float(p),3)) for t,p in top_moods])\n\n"
     "    embeddings = extract_embeddings(model, all_mels, batch_size=32)\n"
     "    idxs, sims = top_k_similar(0, embeddings, k=5)\n"
     "    print('top-5 similar:', [(track_ids[i], round(float(s),3)) for i,s in zip(idxs, sims)])")
@@ -301,7 +346,7 @@ md("## 9. 프로토타입 (Streamlit)\n\n"
 # ===== 11. 보완사항 =====
 md("## 10. 보완사항 및 개선점\n\n"
    "1. CRNN 확장 (시간적 패턴 학습으로 성능 향상 가능)\n"
-   "2. 데이터 서브셋 확대 (현재 10 TAR 폴더만 사용, 전체 100폴더시 ~6,725곡)\n"
+   "2. 데이터 서브셋 확대 (현재 30 TAR 폴더만 사용, 전체 100폴더로 확대 시 약 3.3배 규모)\n"
    "3. 추천 정량 평가 지표 도입 (현재 정성 사례 비교만)")
 
 # ===== 12. 후기 =====

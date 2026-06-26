@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,21 @@ from src.data.dataset import MelspecDataset
 from src.data.load_jamendo import build_subset
 from src.evaluation.metrics import compute_metrics
 from src.models.cnn import CNNConfig, MoodCNN, count_parameters
+
+
+def safe_torch_save(obj, path: str, max_retries: int = 5) -> None:
+    """Save via a temp file + atomic rename, retrying on transient Windows
+    file locks (e.g. antivirus briefly scanning the freshly written file)."""
+    tmp_path = path + ".tmp"
+    for attempt in range(1, max_retries + 1):
+        try:
+            torch.save(obj, tmp_path)
+            os.replace(tmp_path, path)
+            return
+        except RuntimeError:
+            if attempt == max_retries:
+                raise
+            time.sleep(1)
 
 
 @torch.no_grad()
@@ -109,7 +125,7 @@ def main() -> int:
         history.append({"epoch": epoch, "train_loss": round(train_loss, 4), **val_metrics})
         if val_metrics["f1_micro"] > best_val_f1:
             best_val_f1 = val_metrics["f1_micro"]
-            torch.save(model.state_dict(), os.path.join(args.model_out, "model.pt"))
+            safe_torch_save(model.state_dict(), os.path.join(args.model_out, "model.pt"))
             print(f"  -> saved best model (val_f1_micro={best_val_f1:.4f})")
 
     with open(os.path.join(args.model_out, "tags.json"), "w", encoding="utf-8") as f:
