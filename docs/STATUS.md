@@ -1,125 +1,55 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-06-26 (제출 노트북 30 TAR 기준 일원화)
+마지막 갱신: 2026-06-26
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
-## 인프라 표
+## 인프라
 
-| 항목 | 값 | 비고 |
-| --- | --- | --- |
-| 언어/런타임 | Python 3.10(로컬) / 3.11(Streamlit Cloud) | `runtime.txt` |
-| DL 프레임워크 | PyTorch(CPU 빌드) | 오디오 CNN, GPU 없음 |
-| 오디오 전처리 | librosa + soundfile | 멜스펙트로그램 |
-| 추천 | scikit-learn(cosine_similarity) | 임베딩 재사용 |
-| 데모 | Streamlit Cloud(예정) 또는 로컬 IP | `review-sentiment` 패턴 재사용 |
-| 데이터 | MTG-Jamendo 무드/테마 서브셋 | §17.1, 비상업 연구용 |
-| 영속 DB | 없음 | 파일 시스템 기반 |
-
-## 마지막 머지 PR
-
-없음(착수 전).
+| 항목 | 값 |
+| --- | --- |
+| DL 프레임워크 | PyTorch(CPU 빌드) |
+| 오디오 전처리 | librosa + soundfile, 멜스펙트로그램 |
+| 추천 | scikit-learn(cosine_similarity), 임베딩 재사용 |
+| 데이터 | MTG-Jamendo 무드/테마 서브셋, `--max-tars 30` 기준으로 통일(README/app.py/노트북/보고서 전부 일치) |
+| Git 추적 정책 | `models/`·`artifacts/` 직접 추적(LFS 미사용). 수십MB 이상으로 커지면 `git lfs install` 재검토 |
 
 ## 데드라인
 
-**2026-07-01 09:00 발표·시연·제출** (딥러닝 모델 과제, 오늘 6/25 기준 6일).
+**2026-07-01 09:00 발표·시연·제출.** 산출물: 학습 노트북(ipynb) + 소스(py) + 보고서(PPT) → zip 1개 이메일 제출(ahnhg2000@gmail.com).
 
-산출물: 학습 노트북(ipynb) + 소스(py) + 보고서(PPT, 양식 준수) → zip 1개 이메일 제출(ahnhg2000@gmail.com).
+## 현재 상태 (2026-06-26)
 
-## 다음 작업
+- `submission/music_mood_recs.ipynb` — 30 TAR 기준으로 재생성 완료(자체 완결, src import 없음). 학습 셀의 `torch.save`는 Windows 파일잠금(에러 1224) 재발 방지를 위해 `safe_torch_save`(임시파일+원자적 교체+재시도)로 교체됨. 아래 "노트북 점검 결과" 항목 모두 반영 완료. **사용자가 직접 실행해 다운로드~재학습까지 완료할 예정.**
+- 오디오 다운로드/추출: TAR 00~29 전체 완료 확인(`data/audio/26~29`, `artifacts/melspecs/26~29`에 파일 존재, `subset_meta.csv`/`melspec_manifest.csv` 2,247행으로 갱신됨). 더 이상 재시도 불필요.
+- `models/cnn/` — 아직 20 TAR(1,508곡) 기준 모델(최신 아님). 30 TAR 데이터로 재학습 필요(사용자 직접 수행).
+- 노트북을 끝까지 실행하기 전까지는 README/STATUS의 "30 TAR" 서술과 실제 모델 학습 데이터가 다를 수 있음 — 완주 후 일치.
 
-### P0 (7/1 데드라인 내 필수, PRD §20)
+## 노트북 점검 결과 처리 완료 (2026-06-26)
 
-- [x] 데이터셋 확정 — MTG-Jamendo 무드/테마 서브셋 채택(§24 Q1 해결, §17.1)
-- [x] PRD 6일 CPU 현실적 범위로 축소 (상위 5 태그, 6,725곡, 30초 세그먼트, CRNN·평가심화는 P1 이월)
-- [x] 프로젝트 골격 세팅 완료 (.gitignore, requirements.txt, src/ 패키지)
-- [x] 데이터 수집 모듈 — 메타데이터 다운로드 + 상위 5 태그 서브셋 필터(PR-001)
-- [x] 멜스펙 전처리 파이프라인(PR-001)
-- [x] 오디오 다운로드 — `--max-tars 20`으로 1,508곡 다운로드+추출 완료(2026-06-25)
-  - **`--max-tars 30`(~2,271곡 예상)으로 증분 확장 진행 중**(2026-06-25 밤) — 다운로드 속도가 예상보다 훨씬 빨라(8분/10TAR) PRD 목표(1,000~2,000곡) 천장을 13% 정도만 넘기는 수준으로 올림. 기존 20개분은 증분 스킵, 21~29 폴더만 추가 다운로드. 기본값을 30으로 통일(`scripts/run_download.cmd`, `scripts/make_notebook.py`의 `MAX_TARS`, `README.md`, `app.py` 안내문, `scripts/make_report.py` 슬라이드 텍스트)
-  - 재시작 스크립트: `scripts/run_download.cmd` — `%~dp0` 기준으로 프로젝트 루트를 찾으므로 PC/클론 경로에 무관하게 동작 (절대경로 하드코딩 없음). `logs/`는 통째로 gitignore돼 있어 스크립트는 `scripts/`에 둠(로그 출력 파일만 `logs/`에 씀)
-  - 백그라운드 실행(레포 루트에서, PowerShell): `Start-Process cmd -ArgumentList "/c","scripts\run_download.cmd" -WindowStyle Hidden -WorkingDirectory "$PWD" -RedirectStandardOutput "logs\download_stdout.log" -RedirectStandardError "logs\download_stderr.log"`
-  - 현재 진행 상황: `--max-tars 20`으로 1,508곡 다운로드+추출 완료(2026-06-25). 초기 버전엔 TAR 멤버명이 `.low.mp3`인데 메타데이터 `PATH`는 `.mp3`라 0/757 추출되는 버그가 있었음(수정 완료, `_extract_subset_from_tar`). 증분 재실행 지원(이미 추출된 폴더는 재다운로드 skip)
-  - 부분 TAR 자동 삭제 후 처음부터 받음 (재시도 로직 내장)
-  - 병렬 3개 동시 다운로드, 약 205KB/s, 10 TARs에 약 6.7시간 예상
-  - 완료 후 자동으로 artifacts/subset_meta.csv 저장 (train 438 / val 119 / test 200)
-- [x] 단순 CNN 무드 분류 모델 구현(PR-002) — 합성 데이터로 검증 완료, 실데이터 학습 대기
-- [x] 임베딩 추출 + 코사인 유사도 Top-5 추천 구현(PR-003)
-- [x] Streamlit 데모 앱 구현(PR-004) — 합성 데이터로 HTTP 200 확인
-- [x] 학습 노트북(ipynb) 산출(PR-006) — 19셀, 양식 구조 대응
-- [x] 발표 보고서 PPT 초안(PR-007) — 20슬라이드, 실데이터 결과 슬라이드는 학습 후 갱신
-- [ ] 다운로드 완료 후 실데이터 멜스펙 추출 + CNN 학습
-- [ ] 보고서 PPT에 실제 학습 결과/그래프 삽입
-- [ ] 발표 시연 리허설 + zip 패키징 (이메일 제출)
+`submission/music_mood_recs.ipynb` 점검 항목 4건 모두 `scripts/make_notebook.py` 수정 후 재생성 완료:
 
-### P1 (보고서 "5. 보완사항"으로 서술, 후속 이월)
+- [x] **stale 텍스트**: cell "10. 보완사항 및 개선점"의 `"현재 10 TAR 폴더만 사용, 전체 100폴더시 ~6,725곡"`을 30 TAR 기준 서술로 갱신.
+- [x] **마크다운-코드 불일치**: "모델 예측" 셀에 `model(x)` forward + sigmoid 확률로 무드 예측 top-5 출력 추가(`app.py` 패턴과 동일) — 이후 추천(`top_k_similar`) 계산.
+- [x] **테스트셋 미사용**: 학습 셀과 시각화 셀 사이에 "6.5 테스트셋 평가" 셀 신설. `test_ds`(615곡)로 held-out 평가 후 `metrics.json`에 `test` 키로 저장.
+- [x] (낮은 우선순위) 멜스펙 추출 셀에 누락 비율 5% 초과 시 경고 출력 로직 추가.
 
-- [ ] 모델 성능/추천 결과 평가 및 기록(PR-005)
-- [ ] CRNN 확장(베이스라인 성능 낮을 시, 전환 기준 미정 §24 Q2)
-- [ ] 추천 정량 평가 지표 설계(§24 Q3)
+## 남은 작업 (P0, 데드라인 내 필수)
 
-### P2 (PRD §20)
+- [ ] 노트북 끝까지 실행 — 멜스펙 추출 + CNN 재학습(사용자 직접 수행)
+- [ ] 재학습 결과로 `models/cnn/metrics.json` 갱신 확인(test 성능 포함)
+- [ ] 보고서 PPT에 실데이터 학습 결과/그래프 삽입 (`scripts/make_report.py`)
+- [ ] 발표 시연 리허설 + `scripts/package_submission.py`로 zip 패키징 → 이메일 제출
 
-- [ ] 추천 개수 부족 시 UX 보완
+## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)
 
-## 6일 일정 계획 (2026-06-25 ~ 07-01)
+- [ ] CRNN 확장(베이스라인 성능 낮을 시)
+- [ ] 추천 정량 평가 지표 설계(정성 사례 비교 위주로 보고서 작성)
 
-| 일자 | 작업 |
+## 알려진 이슈 (열린 것만)
+
+| 이슈 | 비고 |
 | --- | --- |
-| 6/25(목) | PRD 조정 완료, 골격 세팅, 데이터 수집 모듈, 멜스펙 전처리 모듈 |
-| 6/26(금) | 오디오 서브셋 다운로드 + 멜스펙 추출 실행, CNN 모델 구현 |
-| 6/27(토) | CNN 학습 실행(CPU, 수시간 예상), 임베딩 추출 |
-| 6/28(일) | 코사인 유사도 추천 구현, Streamlit 데모 앱 |
-| 6/29(월) | 노트북(ipynb) 정리, 보고서 PPT 초안 |
-| 6/30(화) | 발표 시연 리허설, 보고서 완성, zip 패키징 |
-| 7/1(수) | 09:00 발표·시연·제출 |
-
-## Git 추적 정책 (2026-06-25 검증)
-
-오디오 다운로드 재개 전, `models/`·`artifacts/` 추적 가능 여부를 점검.
-
-| 항목 | 결과 |
-| --- | --- |
-| `git check-ignore models artifacts` | 무시 대상 아님 (정상 추적 가능) |
-| `.gitignore` | `/data/`, `/artifacts/`, `/models/` 통째 무시 → `/data/audio/`, `/data/jamendo/`, `/data/synth_audio/`만 무시로 좁힘 (artifacts/models은 추적 허용) |
-| `models/cnn_synth/` | `model.pt`(120KB) + `config.json`+`metrics.json`+`tags.json` (합성 모델, 실데이터 학습 전) |
-| `models/` 전체 크기 | 130KB |
-| `artifacts/` 전체 크기 | 9.6MB (합성 멜스펙 15개 + EDA 그래프 2개 + 메타 CSV) |
-| `.gitattributes` (LFS 필터) | **제거함** — git-lfs 바이너리는 설치돼 있으나 이 레포에 `git lfs install`(pre-push 훅) 미실행 상태였음. 이대로 `*.pt` 커밋 시 로컬엔 LFS 포인터로 저장되나 push 시 실제 바이너리가 업로드 안 되어 원격에 깨진 포인터만 남을 위험. 현재 모델·아티팩트 크기가 매우 작아(130KB/9.6MB) LFS 불필요 |
-
-**최종 정책**: Git 직접 추적 유지(LFS 미사용). 추후 실데이터 학습으로 모델/아티팩트가 크게 커지면(예: 수십MB 이상) 그때 `git lfs install` 정식 실행 후 `.gitattributes` 재도입.
-
-## review-sentiment 구조 대응 점검 (2026-06-25)
-
-`review-sentiment` 패턴 재사용 원칙(§15.1 등)에 따라 1:1 대응 여부를 점검. review-sentiment에 없는 신규 디렉터리 3곳은 의도된 재배치/도메인 특성으로 확인:
-
-| music-mood-recs 신규 항목 | review-sentiment 대응 | 비고 |
-| --- | --- | --- |
-| `artifacts/` | `models/eda/` | EDA 그래프·멜스펙 매니페스트·서브셋 메타를 모델 산출물과 분리 보관(오디오 도메인은 전처리 중간산물이 많아 분리가 합리적) |
-| `logs/` | 없음 | 오디오 다운로드(수시간 소요, 백그라운드 실행)는 review-sentiment 도메인(텍스트)에 없는 작업 — 도메인 특성상 신규 |
-| `submission/` | `submission/`(review-sentiment도 동일하게 도입, 2026-06-25) | 제출용 ipynb·app.py 사본을 레포 내부에 두는 정본 위치(외부 절대경로 의존 없음). `scripts/make_notebook.py`가 직접 씀, `scripts/package_submission.py`가 app.py를 동기화 |
-
-또한 보완 완료:
-- `packages.txt` 추가(`ffmpeg`) — MTG-Jamendo 오디오가 mp3 포맷이라 Streamlit Cloud의 `librosa`/`soundfile` mp3 디코딩 안정성 확보 목적(review-sentiment의 `packages.txt`=`default-jdk`와 같은 배포 안전장치 패턴).
-- `src/evaluation/metrics.py` 추가 — review-sentiment의 `src/evaluation/metrics.py` 패턴대로 메트릭 계산 로직을 `scripts/train_cnn.py`에서 분리(`compute_metrics`, `build_comparison_table`, `load_all_metrics`). 기존 테스트 16개 PASS 확인.
-
-(`scripts/`의 산출물 생성 스크립트 `make_notebook.py`/`make_report.py`/`export_pptx_images.py`/`package_submission.py`는 review-sentiment에 대응 없음 — 의도 확인 보류 항목으로 남김.)
-
-## 제출 노트북 30 TAR 기준 일원화 (2026-06-26)
-
-`submission/music_mood_recs.ipynb`의 다운로드 셀에 `MAX_TARS = 20`이 하드코딩돼 있던 문제(생성 스크립트 `scripts/make_notebook.py`는 이미 `MAX_TARS = 30`으로 갱신됐으나 노트북이 재생성되지 않아 구버전 그대로 남아있었음 — README.md/app.py 안내문/docs/STATUS.md/`scripts/make_report.py`는 전부 "30 TAR·약 2,300곡"이라 적혀 있던 것과 불일치)을 해소.
-
-- `python scripts/make_notebook.py` 재실행 → 노트북 `MAX_TARS = 30`으로 갱신, 21개 셀(이전과 동일 구조, 셀 ID만 재생성). 노트북은 src/ import 없이 완전 독립(생성 시점에 src/ 소스를 인라인) — 사용자가 직접 위→아래로 실행하면 다운로드(TAR 20~29 추가)부터 멜스펙 추출·재학습까지 자체 완결됨.
-- `python scripts/sync_standalone_app.py` 재실행 → `app.py`는 이미 src/와 동기화 상태(변경 없음).
-- **남은 작업(사용자가 직접 노트북 실행 예정)**: 현재 `data/audio/`(00~19, 1,508곡)·`models/cnn/`(실데이터 학습 모델)은 아직 20 TAR 기준 — 노트북을 실제로 끝까지 실행해 TAR 20~29(~5GB 추가) 다운로드 + 재학습을 완료해야 디스크 상태도 30 TAR/약 2,300곡으로 맞춰짐. 그 전까지는 README/STATUS의 "30 TAR" 서술과 실제 디스크 데이터(20 TAR)가 다를 수 있음.
-
-## 알려진 이슈
-
-| 이슈 | 상태 | 비고 |
-| --- | --- | --- |
-| MTG-Jamendo 오디오 용량(무드/테마 저품질 46GB) | 완화됨 | 상위 5~8 태그 서브셋(1,000~2,000곡, 30초 세그먼트)으로 필요분만 추출(§22) |
-| CPU 학습 시간 | 관리 필요 | 6일 데드라인 내 단순 CNN만, CRNN은 P1 이월 |
-| 분류 임베딩 → 추천 재사용 가정 미검증 | 열림 | 베이스라인 학습 후 정성 평가(§21, Medium 근거) |
-| Streamlit Cloud 무료 티어 메모리 | 열림 | `st.cache_resource` 캐싱 전략 재사용 검토(§21, Low 근거) |
-| CNN→CRNN 전환 기준 미정 | 열림 | §24 Q2, P1 이월 |
-| 추천 정량 평가 지표 부재 | 열림 | §24 Q3, P1 이월, 정성 사례 비교 위주 |
+| CPU 학습 시간 | 6일 데드라인 내 단순 CNN만 |
+| 분류 임베딩 → 추천 재사용 가정 미검증 | 재학습 후 정성 평가 필요 |
+| Streamlit Cloud 무료 티어 메모리 | 배포 시 `st.cache_resource` 캐싱 전략 점검 필요 |
