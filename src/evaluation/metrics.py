@@ -51,8 +51,9 @@ def build_comparison_table(results: dict[str, dict]) -> pd.DataFrame:
 
 
 def load_all_metrics(models_dir: str = "models") -> dict[str, dict]:
-    """Scans models/*/metrics.json. Each file stores a "history" list (one entry per
-    epoch); the latest epoch's accuracy/F1/ROC-AUC is used for the comparison table."""
+    """Scans models/*/metrics.json. Prefers the held-out "test" entry (final
+    generalization check) when present; otherwise falls back to the last training
+    epoch's val metrics."""
     results: dict[str, dict] = {}
     for metrics_path in sorted(glob.glob(os.path.join(models_dir, "*", "metrics.json"))):
         with open(metrics_path, encoding="utf-8") as f:
@@ -60,11 +61,11 @@ def load_all_metrics(models_dir: str = "models") -> dict[str, dict]:
         model_dir_name = os.path.basename(os.path.dirname(metrics_path))
         display_name = data.get("display_name", model_dir_name)
         history = data.get("history")
-        latest = history[-1] if history else data
+        source = data.get("test") or (history[-1] if history else data)
         results[display_name] = {
-            "accuracy": latest.get("accuracy"),
-            "f1_micro": latest.get("f1_micro"),
-            "f1_macro": latest.get("f1_macro"),
-            "roc_auc": latest.get("roc_auc"),
+            "accuracy": source.get("accuracy"),
+            "f1_micro": source.get("f1_micro"),
+            "f1_macro": source.get("f1_macro"),
+            "roc_auc": source.get("roc_auc"),
         }
     return results

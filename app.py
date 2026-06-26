@@ -6,6 +6,7 @@ Reuses review-sentiment's st.cache_resource pattern for model loading.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 from dataclasses import dataclass
@@ -113,7 +114,48 @@ def top_k_similar(
 # <<< AUTO-SYNCED <<<
 
 
+# >>> AUTO-SYNCED from src/evaluation/metrics.py (run scripts/sync_standalone_app.py) >>>
+def build_comparison_table(results: dict[str, dict]) -> pd.DataFrame:
+    """results = {model_display_name: {"accuracy":..., "f1_micro":..., "f1_macro":..., "roc_auc":...}}."""
+    if not results:
+        return pd.DataFrame(columns=["Accuracy", "F1(micro)", "F1(macro)", "ROC-AUC"])
+
+    df = pd.DataFrame(results).T
+    df = df.rename(
+        columns={
+            "accuracy": "Accuracy",
+            "f1_micro": "F1(micro)",
+            "f1_macro": "F1(macro)",
+            "roc_auc": "ROC-AUC",
+        }
+    )
+    return df[["Accuracy", "F1(micro)", "F1(macro)", "ROC-AUC"]]
+
+
+def load_all_metrics(models_dir: str = "models") -> dict[str, dict]:
+    """Scans models/*/metrics.json. Prefers the held-out "test" entry (final
+    generalization check) when present; otherwise falls back to the last training
+    epoch's val metrics."""
+    results: dict[str, dict] = {}
+    for metrics_path in sorted(glob.glob(os.path.join(models_dir, "*", "metrics.json"))):
+        with open(metrics_path, encoding="utf-8") as f:
+            data = json.load(f)
+        model_dir_name = os.path.basename(os.path.dirname(metrics_path))
+        display_name = data.get("display_name", model_dir_name)
+        history = data.get("history")
+        source = data.get("test") or (history[-1] if history else data)
+        results[display_name] = {
+            "accuracy": source.get("accuracy"),
+            "f1_micro": source.get("f1_micro"),
+            "f1_macro": source.get("f1_macro"),
+            "roc_auc": source.get("roc_auc"),
+        }
+    return results
+# <<< AUTO-SYNCED <<<
+
+
 MODEL_DIR = os.environ.get("MMR_MODEL_DIR", "models/cnn")
+AUDIO_DIR = os.environ.get("MMR_AUDIO_DIR", "data/audio")
 MELSPEC_DIR = os.environ.get("MMR_MELSPEC_DIR", "artifacts/melspecs")
 MANIFEST_CSV = os.environ.get("MMR_MANIFEST", "artifacts/melspec_manifest.csv")
 META_CSV = os.environ.get("MMR_META", "artifacts/subset_meta.csv")
@@ -167,6 +209,23 @@ def _track_display(track_id: str, meta: pd.DataFrame, tags: list[str]) -> str:
     return f"{track_id}  [{', '.join(active) if active else '-'}]"
 
 
+def _audio_path(track_id: str, manifest: pd.DataFrame) -> str | None:
+    rows = manifest.loc[manifest["TRACK_ID"] == track_id, "PATH"]
+    if rows.empty:
+        return None
+    path = os.path.join(AUDIO_DIR, rows.iloc[0])
+    return path if os.path.exists(path) else None
+
+
+_MOOD_EMOJI = {
+    "happy": "😊",
+    "energetic": "⚡",
+    "relaxing": "🌿",
+    "film": "🎬",
+    "dark": "🌑",
+}
+
+
 st.set_page_config(page_title="music-mood-recs", page_icon="🎵", layout="wide")
 
 with st.sidebar:
@@ -190,9 +249,19 @@ except Exception as exc:
     )
     st.stop()
 
+with st.sidebar:
+    st.divider()
+    st.markdown(
+        f"**데이터**: {len(track_ids)}곡\n\n"
+        f"**태그**: {', '.join(tags)}\n\n"
+        f"**모델**: MoodCNN ({sum(p.numel() for p in model.parameters()):,} params)"
+    )
+
 st.success(f"모델 로드 완료 — {len(track_ids)}곡, 태그: {', '.join(tags)}")
 
-tab_predict, tab_about = st.tabs(["🔍 무드 예측 + 추천", "ℹ️ 프로젝트 소개"])
+tab_predict, tab_compare, tab_eda, tab_about = st.tabs(
+    ["🔍 무드 예측 + 추천", "📊 모델 성능", "📈 데이터 탐색(EDA)", "ℹ️ 프로젝트 소개"]
+)
 
 with tab_predict:
     col_in, col_out = st.columns([1, 2])
@@ -201,6 +270,13 @@ with tab_predict:
         display_options = [_track_display(tid, meta, tags) for tid in track_ids]
         selected = st.selectbox("곡 선택", range(len(display_options)), format_func=lambda i: display_options[i])
         st.caption(f"트랙 ID: {track_ids[selected]}")
+
+        selected_audio = _audio_path(track_ids[selected], manifest)
+        if selected_audio:
+            st.audio(selected_audio)
+        else:
+            st.caption("🔇 오디오 파일을 찾을 수 없습니다.")
+
         predict_clicked = st.button("예측 + 추천", use_container_width=True)
 
     if predict_clicked:
@@ -212,24 +288,59 @@ with tab_predict:
 
         with col_out:
             st.subheader("예측 무드")
-            prob_df = pd.DataFrame({"무드": tags, "확률": probs}).sort_values("확률", ascending=True)
-            st.bar_chart(prob_df.set_index("무드"))
             top_mood = tags[int(probs.argmax())]
-            st.metric("최상위 무드", top_mood, f"{probs.max():.1%}")
+            st.metric("최상위 무드", f"{_MOOD_EMOJI.get(top_mood, '')} {top_mood}", f"{probs.max():.1%}")
+            for tag, prob in sorted(zip(tags, probs), key=lambda t: -t[1]):
+                st.progress(float(prob), text=f"{_MOOD_EMOJI.get(tag, '')} {tag} {prob:.0%}")
 
             st.divider()
             st.subheader("비슷한 무드의 곡 Top-5")
             idxs, sims = top_k_similar(selected, embeddings, k=5)
-            rec_rows = []
             for i, sim in zip(idxs, sims):
                 tid = track_ids[i]
-                rec_rows.append(
-                    {
-                        "곡": _track_display(tid, meta, tags),
-                        "코사인 유사도": round(float(sim), 4),
-                    }
-                )
-            st.table(pd.DataFrame(rec_rows))
+                with st.container(border=True):
+                    rec_col_info, rec_col_audio = st.columns([2, 1])
+                    rec_col_info.markdown(f"**{_track_display(tid, meta, tags)}**")
+                    rec_col_info.caption(f"코사인 유사도 {sim:.4f}")
+                    rec_audio = _audio_path(tid, manifest)
+                    if rec_audio:
+                        rec_col_audio.audio(rec_audio)
+
+with tab_compare:
+    all_metrics = load_all_metrics()
+    comparison_df = build_comparison_table(all_metrics)
+    if comparison_df.empty:
+        st.info("아직 학습된 모델 성능 데이터가 없습니다.")
+    else:
+        metric_cols = st.columns(len(comparison_df))
+        for col, (model_display_name, row) in zip(metric_cols, comparison_df.iterrows()):
+            col.metric(model_display_name, f"{row['F1(micro)']:.1%}", help="F1(micro), held-out test 기준")
+
+        st.caption("test split(held-out)으로 평가한 최종 일반화 성능. test가 없는 모델은 마지막 epoch 검증 성능으로 대체.")
+        st.divider()
+        st.dataframe(comparison_df, use_container_width=True)
+        st.bar_chart(comparison_df[["Accuracy", "F1(micro)", "F1(macro)"]], stack=False)
+
+with tab_eda:
+    tag_counts = {t: int(meta[f"tag_{t}"].sum()) for t in tags}
+    sum_cols = st.columns(len(tags) + 1)
+    sum_cols[0].metric("전체 트랙", f"{len(meta):,}곡")
+    for col, (tag, count) in zip(sum_cols[1:], tag_counts.items()):
+        col.metric(f"{_MOOD_EMOJI.get(tag, '')} {tag}", f"{count:,}곡")
+
+    st.divider()
+    st.markdown("**무드 태그 분포** — 곡당 다중 태그 가능")
+    tag_df = pd.DataFrame({"곡 수": tag_counts})
+    st.bar_chart(tag_df)
+
+    st.divider()
+    split_counts = meta["split"].value_counts()
+    st.markdown("**train/validation/test 분할**")
+    st.bar_chart(split_counts)
+
+    st.divider()
+    st.markdown("**곡 길이(초) 분포**")
+    st.bar_chart(pd.cut(meta["DURATION"], bins=10).value_counts().sort_index().rename(lambda i: str(i)))
 
 with tab_about:
     st.subheader("음악 오디오 무드 분류 + 콘텐츠 기반 추천")
