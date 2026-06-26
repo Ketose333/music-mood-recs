@@ -1,6 +1,6 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-06-25 (Git 추적 정책 검증)
+마지막 갱신: 2026-06-26 (제출 노트북 30 TAR 기준 일원화)
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
@@ -104,6 +104,14 @@
 - `src/evaluation/metrics.py` 추가 — review-sentiment의 `src/evaluation/metrics.py` 패턴대로 메트릭 계산 로직을 `scripts/train_cnn.py`에서 분리(`compute_metrics`, `build_comparison_table`, `load_all_metrics`). 기존 테스트 16개 PASS 확인.
 
 (`scripts/`의 산출물 생성 스크립트 `make_notebook.py`/`make_report.py`/`export_pptx_images.py`/`package_submission.py`는 review-sentiment에 대응 없음 — 의도 확인 보류 항목으로 남김.)
+
+## 제출 노트북 30 TAR 기준 일원화 (2026-06-26)
+
+`submission/music_mood_recs.ipynb`의 다운로드 셀에 `MAX_TARS = 20`이 하드코딩돼 있던 문제(생성 스크립트 `scripts/make_notebook.py`는 이미 `MAX_TARS = 30`으로 갱신됐으나 노트북이 재생성되지 않아 구버전 그대로 남아있었음 — README.md/app.py 안내문/docs/STATUS.md/`scripts/make_report.py`는 전부 "30 TAR·약 2,300곡"이라 적혀 있던 것과 불일치)을 해소.
+
+- `python scripts/make_notebook.py` 재실행 → 노트북 `MAX_TARS = 30`으로 갱신, 21개 셀(이전과 동일 구조, 셀 ID만 재생성). 노트북은 src/ import 없이 완전 독립(생성 시점에 src/ 소스를 인라인) — 사용자가 직접 위→아래로 실행하면 다운로드(TAR 20~29 추가)부터 멜스펙 추출·재학습까지 자체 완결됨.
+- `python scripts/sync_standalone_app.py` 재실행 → `app.py`는 이미 src/와 동기화 상태(변경 없음).
+- **남은 작업(사용자가 직접 노트북 실행 예정)**: 현재 `data/audio/`(00~19, 1,508곡)·`models/cnn/`(실데이터 학습 모델)은 아직 20 TAR 기준 — 노트북을 실제로 끝까지 실행해 TAR 20~29(~5GB 추가) 다운로드 + 재학습을 완료해야 디스크 상태도 30 TAR/약 2,300곡으로 맞춰짐. 그 전까지는 README/STATUS의 "30 TAR" 서술과 실제 디스크 데이터(20 TAR)가 다를 수 있음.
 
 ## 알려진 이슈
 
