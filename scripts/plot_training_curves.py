@@ -1,7 +1,7 @@
 """Generate the training-curve figure for the report PPT from models/cnn/metrics.json.
 
 Produces:
-  - artifacts/fig_training_curves.png — train/val loss + val F1(micro/macro) curves
+  - artifacts/report_figures/fig_training_curves.png — train/val loss + val F1(micro/macro) curves
 
 Usage:
   python scripts/plot_training_curves.py
@@ -16,6 +16,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+OUT_DIR = "artifacts/report_figures"
+FIGSIZE = (7.59, 4.43)  # report slide image cap: 759x443px at dpi=100
+DPI = 100
+
 
 def main() -> None:
     with open("models/cnn/metrics.json", encoding="utf-8") as f:
@@ -23,8 +27,8 @@ def main() -> None:
     history = metrics["history"]
     epochs = [h["epoch"] for h in history]
 
-    os.makedirs("artifacts", exist_ok=True)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
+    os.makedirs(OUT_DIR, exist_ok=True)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=FIGSIZE)
 
     ax1.plot(epochs, [h["train_loss"] for h in history], label="train loss", color="#5B8DEF")
     ax1.plot(epochs, [h["loss"] for h in history], label="val loss", color="#E0656A")
@@ -41,9 +45,10 @@ def main() -> None:
     ax2.legend()
 
     plt.tight_layout()
-    fig.savefig("artifacts/fig_training_curves.png", dpi=150)
+    out_path = os.path.join(OUT_DIR, "fig_training_curves.png")
+    fig.savefig(out_path, dpi=DPI)
     plt.close(fig)
-    print("saved artifacts/fig_training_curves.png")
+    print("saved", out_path)
 
 
 if __name__ == "__main__":
