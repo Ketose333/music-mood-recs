@@ -13,7 +13,7 @@
 | 추천 | scikit-learn(cosine_similarity), 임베딩 재사용 |
 | 데이터 | MTG-Jamendo 무드/테마 서브셋, `--max-tars 30` 기준으로 통일(README/app.py/노트북/보고서 전부 일치) |
 | Git 추적 정책 | `models/`만 git 직접 추적(소형). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`(~7GB)는 GitHub LFS 무료 한도(1GB) 초과로 제외, HF Hub 데이터셋 레포(`Ketose333/music-mood-recs-assets`)에 호스팅 — 배포 앱(`app.py`의 `_resolve()`)이 런타임에 `huggingface_hub`로 받아옴 |
-| 보고서 생성 의존성 | `python-pptx` (requirements.txt엔 없음 — `scripts/make_report.py` 실행 전 `pip install python-pptx` 필요, 배포 앱은 사용 안 함) |
+| 보고서 생성 | `submission/보고서.pptx` 단일 파일로 수동 작성·관리(Miricanvas + 직접 편집). `scripts/make_report.py`(python-pptx 자동생성)는 병합 완료 후 삭제됨 |
 
 ## 데드라인
 
@@ -25,7 +25,7 @@
 - 노트북: `submission/music_mood_recs.ipynb` 30 TAR 기준 전체 실행 완료(다운로드~멜스펙~CNN 학습~테스트셋 평가), stale 텍스트/마크다운-코드 불일치 점검 4건 모두 해결됨.
 - 앱(`app.py`): 4탭(`🔍 예측`/`📊 모델 성능`/`📈 데이터 탐색(EDA)`/`ℹ️ 프로젝트 소개`) 구조. `🔍 예측` 탭 안에서 라디오로 입력 방식 3가지 선택 — **📂 라이브러리 곡 선택 / 🎤 오디오 업로드 / 💬 텍스트로 찾기**(텍스트는 키워드 휴리스틱으로 태그 추정 후 같은 분류기 확률로 추천, 별도 NLP 모델 아님). 로컬·Streamlit Cloud 모두 사용자가 직접 테스트해 정상 동작 확인됨(업로드 용량초과 에러로 ×버튼이 가려지는 문제도 `maxUploadSize` 5→50MB + "🔄 다른 파일 선택" 리셋 버튼으로 해결).
 - **HF Hub 데이터 이전 완료 + 재부팅 검증** — `data/audio`·`artifacts/melspecs`·`embeddings.npy`(~7GB, GitHub LFS 무료 한도 7배 초과 상태였음)를 `Ketose333/music-mood-recs-assets`로 이전, git 히스토리에서도 완전 제거(force-push, `.git` 7.69GB→12MB). `app.py`의 `_resolve()`가 런타임에 huggingface_hub로 받아오도록 변경, Streamlit Cloud 재부팅으로 정상 동작 직접 확인됨. `submission/music_mood_recs.py`·`.ipynb`도 이 변경 반영해 재생성·푸시 완료.
-- 보고서: **part1/part2 분리 구조 폐기 → `submission/보고서.pptx` 단일 파일로 완전 병합 완료**(사용자 직접 작업). 프로토타이핑 화면 3슬라이드(예측+추천 / 오디오업로드·텍스트검색 / 소개탭)는 Streamlit Cloud 재부팅 후 실제 앱을 Playwright로 캡처(1518×886px = 759×443의 2배, 브라우저/Streamlit 툴바 제거한 순수 앱 화면)해 `submission/앱 1 예측화면.png`·`앱 2 업로드텍스트.png`·`앱 3 소개탭.png`로 저장, `make_report.py`로 part2에 1차 첨부 확인 후 최종적으로 part1에 수동 병합. 병합 후 더 이상 필요 없는 옛 노트북 스크린샷 8장(`노트북 N ...png`)과 `음악무드분류및추천_보고서_part2.pptx`는 사용자가 직접 삭제함 — **`scripts/make_report.py`는 이제 사용하지 않는 레거시 스크립트**(원본 스크린샷은 `artifacts/app_screens/`에 남아있음).
+- 보고서: **part1/part2 분리 구조 폐기 → `submission/보고서.pptx` 단일 파일로 완전 병합 완료**(사용자 직접 작업). 프로토타이핑 화면 3슬라이드(예측+추천 / 오디오업로드·텍스트검색 / 소개탭)는 Streamlit Cloud 재부팅 후 실제 앱을 Playwright로 캡처(1518×886px = 759×443의 2배, 브라우저/Streamlit 툴바 제거한 순수 앱 화면)해 `submission/앱 1 예측화면.png`·`앱 2 업로드텍스트.png`·`앱 3 소개탭.png`로 저장, `make_report.py`로 part2에 1차 첨부 확인 후 최종적으로 part1에 수동 병합. 병합 후 더 이상 필요 없는 옛 노트북 스크린샷 8장(`노트북 N ...png`)·`음악무드분류및추천_보고서_part2.pptx`·**`scripts/make_report.py`(pptx 생성 스크립트) 자체를 모두 삭제**함(원본 스크린샷은 `artifacts/app_screens/`에 남아있음).
 - 보고서용 차트 6종(EDA 3종 + 학습곡선 + 모델예측 예시 2종)을 **실데이터로 생성**해 `artifacts/report_figures/`에 759×443 이하로 통일(신규 스크립트 `scripts/plot_prediction_examples.py` + `compute_eda.py`/`plot_training_curves.py` 출력경로·크기 갱신). 묵은 `artifacts/fig_*.png` 4종은 로컬에서도 삭제됨.
 - **HF Hub 데이터셋 레포(`Ketose333/music-mood-recs-assets`) 정리**: 라이선스 카드(README.md) 추가(MTG-Jamendo 출처+트랙별 CC 라이선스 분포표+비영리 연구용 명시), `app.py`가 안 쓰는 잔여물 20개(묵은 차트 PNG 4·합성테스트데이터 16) 삭제, 커밋 히스토리를 `Initial commit` 1개로 압축. **public 유지**(현재 코드에 토큰 인증이 없어 private 전환 시 채점 PC에서 401 발생 — "어느 PC에서도 실행 가능" 조건 미충족). 정리 후 매니페스트·임베딩·멜스펙·오디오 다운로드 전부 재검증 완료, 로컬 보고서 파일과는 완전히 무관(영향 없음 확인됨).
 - `submission/music_mood_recs.py`는 항상 최신 `app.py`와 동기화돼 있음(매 기능 변경 후 `python scripts/sync_standalone_app.py && python scripts/make_notebook.py`로 재생성, 최종 zip 패키징 시 `package_submission.py` 사용).
