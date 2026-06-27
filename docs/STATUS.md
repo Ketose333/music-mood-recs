@@ -25,7 +25,7 @@
 - 노트북: `submission/music_mood_recs.ipynb` 30 TAR 기준 전체 실행 완료(다운로드~멜스펙~CNN 학습~테스트셋 평가), stale 텍스트/마크다운-코드 불일치 점검 4건 모두 해결됨.
 - 앱(`app.py`): 4탭(`🔍 예측`/`📊 모델 성능`/`📈 데이터 탐색(EDA)`/`ℹ️ 프로젝트 소개`) 구조. `🔍 예측` 탭 안에서 라디오로 입력 방식 3가지 선택 — **📂 라이브러리 곡 선택 / 🎤 오디오 업로드 / 💬 텍스트로 찾기**(텍스트는 키워드 휴리스틱으로 태그 추정 후 같은 분류기 확률로 추천, 별도 NLP 모델 아님). 로컬·Streamlit Cloud 모두 사용자가 직접 테스트해 정상 동작 확인됨(업로드 용량초과 에러로 ×버튼이 가려지는 문제도 `maxUploadSize` 5→50MB + "🔄 다른 파일 선택" 리셋 버튼으로 해결).
 - **HF Hub 데이터 이전 완료 + 재부팅 검증** — `data/audio`·`artifacts/melspecs`·`embeddings.npy`(~7GB, GitHub LFS 무료 한도 7배 초과 상태였음)를 `Ketose333/music-mood-recs-assets`로 이전, git 히스토리에서도 완전 제거(force-push, `.git` 7.69GB→12MB). `app.py`의 `_resolve()`가 런타임에 huggingface_hub로 받아오도록 변경, Streamlit Cloud 재부팅으로 정상 동작 직접 확인됨. `submission/music_mood_recs.py`·`.ipynb`도 이 변경 반영해 재생성·푸시 완료.
-- 보고서: 단일 PPTX 생성은 폐기, **part1(`submission/보고서_part1.pptx`, Miricanvas 손작업) + part2(`submission/음악무드분류및추천_보고서_part2.pptx`, `make_report.py` 자동생성)** 2단계 구조로 전환. **part1이 개요~모델 예측/추천까지 전부 흡수 완료**(미리캔버스에서 직접 갱신, 실데이터 차트 포함) — `scripts/make_report.py`도 그만큼 슬라이드 생성 책임을 덜어 **이제 프로토타이핑(화면) 3슬라이드만** 생성(예측+추천 화면 / 오디오업로드·텍스트검색 / 소개탭). 이 3슬라이드는 아직 **Streamlit 앱 스크린샷 캡처 전**이라 `submission/앱 1 예측화면.png`·`앱 2 업로드텍스트.png`·`앱 3 소개탭.png`가 없으면 경고만 찍고 텍스트만 생성됨(파일명 그대로 캡처해 `submission/`에 넣고 재실행하면 자동 첨부).
+- 보고서: **part1/part2 분리 구조 폐기 → `submission/보고서.pptx` 단일 파일로 완전 병합 완료**(사용자 직접 작업). 프로토타이핑 화면 3슬라이드(예측+추천 / 오디오업로드·텍스트검색 / 소개탭)는 Streamlit Cloud 재부팅 후 실제 앱을 Playwright로 캡처(1518×886px = 759×443의 2배, 브라우저/Streamlit 툴바 제거한 순수 앱 화면)해 `submission/앱 1 예측화면.png`·`앱 2 업로드텍스트.png`·`앱 3 소개탭.png`로 저장, `make_report.py`로 part2에 1차 첨부 확인 후 최종적으로 part1에 수동 병합. 병합 후 더 이상 필요 없는 옛 노트북 스크린샷 8장(`노트북 N ...png`)과 `음악무드분류및추천_보고서_part2.pptx`는 사용자가 직접 삭제함 — **`scripts/make_report.py`는 이제 사용하지 않는 레거시 스크립트**(원본 스크린샷은 `artifacts/app_screens/`에 남아있음).
 - 보고서용 차트 6종(EDA 3종 + 학습곡선 + 모델예측 예시 2종)을 **실데이터로 생성**해 `artifacts/report_figures/`에 759×443 이하로 통일(신규 스크립트 `scripts/plot_prediction_examples.py` + `compute_eda.py`/`plot_training_curves.py` 출력경로·크기 갱신). 묵은 `artifacts/fig_*.png` 4종은 로컬에서도 삭제됨.
 - **HF Hub 데이터셋 레포(`Ketose333/music-mood-recs-assets`) 정리**: 라이선스 카드(README.md) 추가(MTG-Jamendo 출처+트랙별 CC 라이선스 분포표+비영리 연구용 명시), `app.py`가 안 쓰는 잔여물 20개(묵은 차트 PNG 4·합성테스트데이터 16) 삭제, 커밋 히스토리를 `Initial commit` 1개로 압축. **public 유지**(현재 코드에 토큰 인증이 없어 private 전환 시 채점 PC에서 401 발생 — "어느 PC에서도 실행 가능" 조건 미충족). 정리 후 매니페스트·임베딩·멜스펙·오디오 다운로드 전부 재검증 완료, 로컬 보고서 파일과는 완전히 무관(영향 없음 확인됨).
 - `submission/music_mood_recs.py`는 항상 최신 `app.py`와 동기화돼 있음(매 기능 변경 후 `python scripts/sync_standalone_app.py && python scripts/make_notebook.py`로 재생성, 최종 zip 패키징 시 `package_submission.py` 사용).
@@ -40,15 +40,16 @@
 - **보고서 PPT 데이터/슬라이드 갱신** — EDA 그림 재생성, 학습 곡선 스크립트 신규(`plot_training_curves.py`), 실데이터 성능 반영, 오디오 업로드/텍스트 검색 슬라이드 신규 추가, stale "future work"(오디오 업로드를 미래 계획으로 적어둔 보완사항 행) 정정 (`ca83b5e` 등 + 이번 세션).
 - **HF Hub 데이터 이전 + 히스토리 재작성** — `data/audio`·`artifacts/melspecs`·`embeddings.npy` git 추적 해제 후 HF Hub(`Ketose333/music-mood-recs-assets`)로 이전, `app.py`에 `_resolve()` 폴백 추가(`84828dd`). `download_audio.py`에 `--hf-repo-id` 옵션 추가해 추출 즉시 업로드 가능하도록 개선(`342ddbf`). `git-filter-repo`로 전체 히스토리에서 해당 경로 제거 후 force-push(`00f7508`, `.git` 12MB). 제출 스냅샷 재생성(`d8e5144`). Streamlit Cloud 재부팅으로 정상 동작 확인됨.
 - **보고서 part1/part2 분리 + 실데이터 차트화 + HF Hub 라이선스 정리** — part1(Miricanvas)·part2(`make_report.py`) 분리 후 part1이 점진적으로 흡수, `make_report.py`도 그만큼 책임 축소(최종: 프로토타이핑 화면 3슬라이드만). EDA 3종·학습곡선·모델예측 2종 차트를 리사이즈 대신 실데이터 재생성(`scripts/plot_prediction_examples.py` 신규, `compute_eda.py`/`plot_training_curves.py` 출력경로·크기 통일), `artifacts/report_figures/`로 일원화. HF Hub 레포에 라이선스 카드 추가(MTG-Jamendo 트랙별 CC 라이선스 점검 결과 포함) + 앱 미사용 잔여물 20개 삭제 + 히스토리 `Initial commit` 1개로 압축, public 유지 결정(토큰 미지원으로 private 시 채점 PC 401).
+- **프로토타이핑 스크린샷 캡처 + 보고서 단일 파일 병합** — Streamlit Cloud 배포 앱을 Playwright로 직접 조작(예측+추천 실행, 텍스트 무드 검색 실행, 소개 탭)해 3장 캡처, 1518×886px(=759×443×2, 브라우저/Streamlit 툴바 제거)로 통일해 `submission/`에 저장. 이후 part1/part2를 `submission/보고서.pptx` 단일 파일로 완전 병합(사용자 작업), 옛 노트북 스크린샷 8장과 part2 PPTX는 더 이상 필요 없어 삭제. `scripts/make_report.py`는 레거시로 전환.
 
 </details>
 
 ## 남은 작업 (P0, 데드라인 내 필수)
 
-- [ ] **Streamlit 앱 스크린샷 3장 캡처** → `submission/`에 `앱 1 예측화면.png` / `앱 2 업로드텍스트.png` / `앱 3 소개탭.png`로 저장 → `python scripts/make_report.py` 재실행해 part2에 자동 첨부 확인
-- [ ] part1(Miricanvas) + part2(위에서 갱신된 3슬라이드) 최종 PPT로 통합 — part2를 part1 템플릿 양식(배지+제목+리드)에 맞춰 옮겨붙이기
+- [x] **Streamlit 앱 스크린샷 3장 캡처** → `submission/앱 1 예측화면.png` / `앱 2 업로드텍스트.png` / `앱 3 소개탭.png` (1518×886px, 순수 앱 화면)
+- [x] part1 + part2 최종 PPT로 통합 → `submission/보고서.pptx` 단일 파일로 완료(사용자 직접 작업, 옛 part2/노트북 스크린샷 8장 삭제)
 - [ ] 발표 시연 리허설 — 입력 방식 3가지(라이브러리 선택/업로드/텍스트) 전부 시연 동선에 포함
-- [ ] `scripts/package_submission.py --name 본인이름 --report <최종 통합 PPT 경로>`로 최종 zip(노트북+py+보고서) 패키징 → 이메일 제출(ahnhg2000@gmail.com, 2026-07-01 09:00). **`--report` 기본값이 옛 단일파일명이라 통합 PPT 파일명에 맞춰 인자로 명시할 것**
+- [ ] `scripts/package_submission.py --name 본인이름 --report "submission/보고서.pptx"`로 최종 zip(노트북+py+보고서) 패키징 → 이메일 제출(ahnhg2000@gmail.com, 2026-07-01 09:00). **`--report` 기본값이 옛 파일명이라 위처럼 인자로 명시할 것**
 
 ## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)
 
