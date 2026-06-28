@@ -11,7 +11,7 @@
 | DL 프레임워크 | PyTorch(CPU 빌드) |
 | 오디오 전처리 | librosa + soundfile, 멜스펙트로그램 |
 | 추천 | scikit-learn(cosine_similarity), 임베딩 재사용 |
-| 데이터 | MTG-Jamendo 무드/테마 서브셋. **노트북(`submission/music_mood_recs.ipynb`)을 `MAX_TARS = 50`으로 갱신해 재실행 중** — 기존 0~29번 TAR(로컬+HF Hub)은 그대로 두고 30~49번만 추가로 받아 로컬+HF Hub 양쪽에 동시 저장(`download_and_extract_subset(..., hf_repo_id=...)`). `scripts/run_download.cmd`도 인자로 TAR 개수를 바꿀 수 있게 파라미터화됨(`run_download.cmd 60` 등). 다음에 또 늘릴 때도(60/70 등) `MAX_TARS`만 올리고 재실행하면 이미 받은 TAR는 건너뛰고 새 TAR만 받아 로컬+HF Hub에 자동으로 이어붙음 — README/STATUS의 "30 TAR(2,247곡)" 같은 결과 수치는 재학습이 끝나야 갱신 |
+| 데이터 | MTG-Jamendo 무드/테마 서브셋. **노트북(`submission/music_mood_recs.ipynb`)을 `MAX_TARS = 50`으로 갱신해 재실행 중** — 기존 0~29번 TAR(로컬+HF Hub)은 그대로 두고 30~49번만 추가로 받아 로컬+HF Hub 양쪽에 동시 저장(`download_and_extract_subset(..., hf_repo_id=...)`). 첫 실행 시 로컬 `data/audio`가 비어 있어 0번 TAR부터 원본 mirror 재다운로드를 시도하는 버그 발견 → 이미 HF Hub에 있는 폴더는 **mirror 재다운로드 대신 HF에서 바로 backfill**하도록 수정(`_backfill_from_hf`). `scripts/run_download.cmd`도 인자로 TAR 개수를 바꿀 수 있게 파라미터화됨(`run_download.cmd 60` 등). 다음에 또 늘릴 때도(60/70 등) `MAX_TARS`만 올리고 재실행하면 이미 받은 TAR는 건너뛰고 새 TAR만 받아 로컬+HF Hub에 자동으로 이어붙음 — README/STATUS의 "30 TAR(2,247곡)" 같은 결과 수치는 재학습이 끝나야 갱신 |
 | Git 추적 정책 | `models/`만 git 직접 추적(소형). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`(~7GB)는 GitHub LFS 무료 한도(1GB) 초과로 제외, HF Hub 데이터셋 레포(`Ketose333/music-mood-recs-assets`)에 호스팅 — 배포 앱(`app.py`의 `_resolve()`)이 런타임에 `huggingface_hub`로 받아옴 |
 | 보고서 생성 | `submission/보고서.pptx` 단일 파일로 수동 작성·관리(Miricanvas + 직접 편집). `scripts/make_report.py`(python-pptx 자동생성)는 병합 완료 후 삭제됨 |
 
