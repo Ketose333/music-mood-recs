@@ -29,6 +29,12 @@ def main() -> int:
     parser.add_argument("--sr", type=int, default=_DEFAULT_CFG.sr)
     parser.add_argument("--n-mels", type=int, default=_DEFAULT_CFG.n_mels)
     parser.add_argument("--segment-seconds", type=float, default=_DEFAULT_CFG.segment_seconds)
+    parser.add_argument(
+        "--hf-repo-id",
+        default=None,
+        help="If set, upload any melspec .npy not yet on this HF Hub dataset repo "
+        "(keeps the deployed app's HF copy in sync after a TAR-count bump).",
+    )
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.manifest), exist_ok=True)
@@ -41,6 +47,13 @@ def main() -> int:
     manifest.to_csv(args.manifest, index=False)
     print(f"Manifest: {len(manifest)} tracks -> {args.manifest}")
     print(f"Missing audio files skipped: {missing}")
+
+    if args.hf_repo_id:
+        from src.data.hf_sync import upload_missing_files
+
+        n = upload_missing_files(args.hf_repo_id, manifest["npy_path"].tolist())
+        print(f"Uploaded {n} new melspec files to {args.hf_repo_id}")
+
     return 0
 
 
