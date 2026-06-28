@@ -1,16 +1,20 @@
 """Precompute MoodCNN embeddings for every track in the melspec manifest.
 
-Streamlit Community Cloud guarantees only 1GB RAM. Loading all ~2,247
-mel-spectrograms (128 x 1292 float32, ~0.63MB each => ~1.4GB) into memory to
-run a forward pass at app startup blows that budget and OOM-kills the app.
+Streamlit Community Cloud guarantees only 1GB RAM. Loading every
+mel-spectrogram (128 x 1292 float32, ~0.63MB each) into memory to run a
+forward pass at app startup blows that budget and OOM-kills the app.
 
 This script does that forward pass once, offline, and saves just the
-resulting embeddings (2,247 x embedding_dim floats, a few hundred KB) so
+resulting embeddings (n_tracks x embedding_dim floats, a few hundred KB) so
 app.py only needs to load a tiny precomputed array at runtime - never the
 full mel-spectrogram set.
 
+Pass --hf-repo-id to also push the result to the HF Hub dataset repo the
+deployed app reads from — otherwise a TAR-count bump leaves the app loading
+a stale embeddings.npy with the wrong row count.
+
 Usage:
-  python -m scripts.precompute_embeddings
+  python -m scripts.precompute_embeddings --hf-repo-id Ketose333/music-mood-recs-assets
 """
 
 from __future__ import annotations
@@ -33,6 +37,11 @@ def main() -> int:
     parser.add_argument("--model-dir", default="models/cnn")
     parser.add_argument("--manifest", default="artifacts/melspec_manifest.csv")
     parser.add_argument("--out", default="artifacts/embeddings.npy")
+    parser.add_argument(
+        "--hf-repo-id",
+        default=None,
+        help="If set, upload the resulting embeddings.npy to this HF Hub dataset repo.",
+    )
     args = parser.parse_args()
 
     with open(os.path.join(args.model_dir, "config.json"), encoding="utf-8") as f:
@@ -48,6 +57,13 @@ def main() -> int:
 
     np.save(args.out, embeddings)
     print(f"Saved {embeddings.shape} embeddings -> {args.out} (manifest row order, {len(manifest)} tracks)")
+
+    if args.hf_repo_id:
+        from src.data.hf_sync import upload_file
+
+        upload_file(args.hf_repo_id, args.out)
+        print(f"Uploaded {args.out} to {args.hf_repo_id}")
+
     return 0
 
 

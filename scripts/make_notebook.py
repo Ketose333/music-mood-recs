@@ -111,13 +111,14 @@ code(
     "from concurrent.futures import ThreadPoolExecutor, as_completed\n\n"
     + inline_module("src/data/download_audio.py")
     + "\n"
+    "HF_REPO_ID = 'Ketose333/music-mood-recs-assets'  # 오디오/멜스펙/embeddings 전부 이 레포로 동기화\n"
     "MAX_TARS = 50\n"
     "subset = restrict_subset_to_folders(subset, MAX_TARS)  # 이후 셀(EDA·학습)은 모두 이 제한된 서브셋을 기준으로 한다\n"
     "for s in ['train', 'validation', 'test']:\n"
     "    print(f'{s} (restricted): {len(subset[s])} tracks')\n\n"
     "download_and_extract_subset(\n"
     "    subset, 'data/audio', MAX_TARS, parallel=3,\n"
-    "    hf_repo_id='Ketose333/music-mood-recs-assets',  # local + HF Hub 동시 저장, 다음 확장도 이어서 자동 업로드\n"
+    "    hf_repo_id=HF_REPO_ID,  # local + HF Hub 동시 저장, 다음 확장도 이어서 자동 업로드\n"
     ")\n\n"
     "subset_meta = pd.concat(\n"
     "    [subset[s].assign(split=s) for s in ['train', 'validation', 'test']],\n"
@@ -147,7 +148,8 @@ code(
 # ===== 5. 전처리 =====
 md("## 4. 데이터 전처리 - 멜스펙트로그램 추출\n\n"
    "각 트랙에서 30초 세그먼트를 잘라 log-mel spectrogram 계산. "
-   "`data/audio/`의 다운로드된 mp3에서 직접 추출하며, 이미 계산된 트랙은 캐시를 재사용한다(증분 안전).")
+   "`data/audio/`의 다운로드된 mp3에서 직접 추출하며, 이미 계산된 트랙은 캐시를 재사용한다(증분 안전). "
+   "멜스펙도 추출 즉시 HF Hub로 자동 업로드되어, 배포 앱이 읽는 복사본이 항상 최신 TAR 수와 일치한다.")
 code(
     "import os\n"
     "from dataclasses import dataclass\n"
@@ -156,6 +158,8 @@ code(
     "import numpy as np\n\n"
     + inline_module("src/preprocessing/melspec.py")
     + "\n"
+    + inline_module("src/data/hf_sync.py")
+    + "\n"
     "cfg = MelspecConfig()\n"
     "print(f'sr={cfg.sr}, n_mels={cfg.n_mels}, segment={cfg.segment_seconds}s, frames={cfg.expected_frames}')\n\n"
     "MANIFEST_CSV = 'artifacts/melspec_manifest.csv'\n"
@@ -163,6 +167,8 @@ code(
     "    meta_csv='artifacts/subset_meta.csv', audio_dir='data/audio', out_dir='artifacts/melspecs', cfg=cfg)\n"
     "melspec_manifest.to_csv(MANIFEST_CSV, index=False)\n"
     "print(f'Manifest: {len(melspec_manifest)} tracks -> {MANIFEST_CSV} (missing audio: {missing})')\n"
+    "n_uploaded = upload_missing_files(HF_REPO_ID, melspec_manifest['npy_path'].tolist())\n"
+    "print(f'Uploaded {n_uploaded} new melspec files to {HF_REPO_ID}')\n"
     "missing_ratio = missing / (len(melspec_manifest) + missing) if (len(melspec_manifest) + missing) else 0\n"
     "if missing_ratio > 0.05:\n"
     "    print(f'경고: 누락 비율 {missing_ratio:.1%} — 오디오 다운로드 상태를 확인하세요.')\n\n"
@@ -314,7 +320,9 @@ code(
 
 # ===== 9. 예측 =====
 md("## 8. 모델 예측 - 무드 분류 + 추천\n\n"
-   "선택한 곡의 무드 예측 + 코사인 유사도 Top-5 추천")
+   "선택한 곡의 무드 예측 + 코사인 유사도 Top-5 추천. "
+   "여기서 계산한 전체 곡 embeddings는 `artifacts/embeddings.npy`로 저장되어 HF Hub에도 자동 업로드된다 "
+   "(배포 앱이 추론 시 읽는 파일이라, TAR 수를 늘릴 때마다 이 셀까지 재실행해야 앱이 최신 데이터와 맞는다).")
 code(
     "import os\n"
     "import pandas as pd\n"
@@ -342,7 +350,11 @@ code(
     "    print(f'{track_ids[0]} 무드 예측 top-5:', [(t, round(float(p),3)) for t,p in top_moods])\n\n"
     "    embeddings = extract_embeddings(model, all_mels, batch_size=32)\n"
     "    idxs, sims = top_k_similar(0, embeddings, k=5)\n"
-    "    print('top-5 similar:', [(track_ids[i], round(float(s),3)) for i,s in zip(idxs, sims)])")
+    "    print('top-5 similar:', [(track_ids[i], round(float(s),3)) for i,s in zip(idxs, sims)])\n\n"
+    "    EMBEDDINGS_NPY = 'artifacts/embeddings.npy'\n"
+    "    np.save(EMBEDDINGS_NPY, embeddings)\n"
+    "    upload_file(HF_REPO_ID, EMBEDDINGS_NPY)\n"
+    "    print(f'Saved + uploaded {embeddings.shape} embeddings -> {EMBEDDINGS_NPY} ({HF_REPO_ID}) — app.py reads this for inference')")
 
 # ===== 10. 프로토타입 =====
 md("## 9. 프로토타입 (Streamlit)\n\n"
