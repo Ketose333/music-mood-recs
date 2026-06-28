@@ -1,6 +1,6 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-06-27
+마지막 갱신: 2026-06-28
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
@@ -11,7 +11,7 @@
 | DL 프레임워크 | PyTorch(CPU 빌드) |
 | 오디오 전처리 | librosa + soundfile, 멜스펙트로그램 |
 | 추천 | scikit-learn(cosine_similarity), 임베딩 재사용 |
-| 데이터 | MTG-Jamendo 무드/테마 서브셋. **노트북(`submission/music_mood_recs.ipynb`)을 `MAX_TARS = 50`으로 갱신해 재실행 중** — 기존 0~29번 TAR(로컬+HF Hub)은 그대로 두고 30~49번만 추가로 받아 로컬+HF Hub 양쪽에 동시 저장(`download_and_extract_subset(..., hf_repo_id=...)`). 첫 실행 시 로컬 `data/audio`가 비어 있어 0번 TAR부터 원본 mirror 재다운로드를 시도하는 버그 발견 → 이미 HF Hub에 있는 폴더는 **mirror 재다운로드 대신 HF에서 바로 backfill**하도록 수정(`_backfill_from_hf`). `scripts/run_download.cmd`도 인자로 TAR 개수를 바꿀 수 있게 파라미터화됨(`run_download.cmd 60` 등). 다음에 또 늘릴 때도(60/70 등) `MAX_TARS`만 올리고 재실행하면 이미 받은 TAR는 건너뛰고 새 TAR만 받아 로컬+HF Hub에 자동으로 이어붙음 — README/STATUS의 "30 TAR(2,247곡)" 같은 결과 수치는 재학습이 끝나야 갱신 |
+| 데이터 | MTG-Jamendo 무드/테마 서브셋. **`MAX_TARS = 50`으로 재실행 완료** — 0~29번 TAR에 30~49번을 추가로 받아 로컬+HF Hub 양쪽에 동시 저장(`download_and_extract_subset(..., hf_repo_id=...)`). 최종 규모 50 TAR(3,585곡). HF Hub 업로드로 생긴 커밋 21개는 `super_squash_history`로 1개로 재스쿼시 완료. 다음에 또 늘릴 때도(60/70 등) `MAX_TARS`만 올리고 재실행하면 이미 받은 TAR는 건너뛰고 새 TAR만 받아 로컬+HF Hub에 자동으로 이어붙음 |
 | Git 추적 정책 | `models/`만 git 직접 추적(소형). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`(~7GB)는 GitHub LFS 무료 한도(1GB) 초과로 제외, HF Hub 데이터셋 레포(`Ketose333/music-mood-recs-assets`)에 호스팅 — 배포 앱(`app.py`의 `_resolve()`)이 런타임에 `huggingface_hub`로 받아옴 |
 | 보고서 생성 | `submission/보고서.pptx` 단일 파일로 수동 작성·관리(Miricanvas + 직접 편집). `scripts/make_report.py`(python-pptx 자동생성)는 병합 완료 후 삭제됨 |
 
@@ -19,10 +19,10 @@
 
 **2026-07-01 09:00 발표·시연·제출.** 산출물: 학습 노트북(ipynb) + 소스(py) + 보고서(PPT) → zip 1개 이메일 제출(ahnhg2000@gmail.com).
 
-## 현재 상태 (2026-06-27)
+## 현재 상태 (2026-06-28)
 
-- 모델: `models/cnn/` — 30 TAR(2,247곡) 데이터로 학습 완료. **best val F1(micro)=0.2977**, **test F1(micro)=0.2642 / accuracy=0.1659 / ROC-AUC=0.7456**(태그: happy/energetic/relaxing/film/dark).
-- 노트북: `submission/music_mood_recs.ipynb` 30 TAR 기준 전체 실행 완료(다운로드~멜스펙~CNN 학습~테스트셋 평가), stale 텍스트/마크다운-코드 불일치 점검 4건 모두 해결됨.
+- 모델: `models/cnn/` — 50 TAR(3,585곡) 데이터로 재학습 완료. **best val F1(micro)=0.2994**, **test F1(micro)=0.2618 / accuracy=0.1624 / ROC-AUC=0.7593**(태그: happy/energetic/relaxing/film/dark).
+- 노트북: `submission/music_mood_recs.ipynb` 50 TAR 기준 전체 실행(run all) 끝까지 성공(다운로드~멜스펙~CNN 학습~테스트셋 평가). HF Hub(`Ketose333/music-mood-recs-assets`)에 30~49번 TAR 자동 업로드 후 커밋 히스토리 21개→1개로 재스쿼시 완료. 보고서용 차트(`fig_training_curves.png`/`fig_mood_probs_example.png`/`fig_top5_similarity_example.png`)도 새 결과로 재생성됨.
 - 앱(`app.py`): 4탭(`🔍 예측`/`📊 모델 성능`/`📈 데이터 탐색(EDA)`/`ℹ️ 프로젝트 소개`) 구조. `🔍 예측` 탭 안에서 라디오로 입력 방식 3가지 선택 — **📂 라이브러리 곡 선택 / 🎤 오디오 업로드 / 💬 텍스트로 찾기**(텍스트는 키워드 휴리스틱으로 태그 추정 후 같은 분류기 확률로 추천, 별도 NLP 모델 아님). 로컬·Streamlit Cloud 모두 사용자가 직접 테스트해 정상 동작 확인됨(업로드 용량초과 에러로 ×버튼이 가려지는 문제도 `maxUploadSize` 5→50MB + "🔄 다른 파일 선택" 리셋 버튼으로 해결).
 - **HF Hub 데이터 이전 완료 + 재부팅 검증** — `data/audio`·`artifacts/melspecs`·`embeddings.npy`(~7GB, GitHub LFS 무료 한도 7배 초과 상태였음)를 `Ketose333/music-mood-recs-assets`로 이전, git 히스토리에서도 완전 제거(force-push, `.git` 7.69GB→12MB). `app.py`의 `_resolve()`가 런타임에 huggingface_hub로 받아오도록 변경, Streamlit Cloud 재부팅으로 정상 동작 직접 확인됨. `submission/music_mood_recs.py`·`.ipynb`도 이 변경 반영해 재생성·푸시 완료.
 - 보고서: **part1/part2 분리 구조 폐기 → `submission/보고서.pptx` 단일 파일로 완전 병합 완료**(사용자 직접 작업). 프로토타이핑 화면 3슬라이드(예측+추천 / 오디오업로드·텍스트검색 / 소개탭)는 Streamlit Cloud 재부팅 후 실제 앱을 Playwright로 캡처(1518×886px = 759×443의 2배, 브라우저/Streamlit 툴바 제거한 순수 앱 화면)해 `submission/앱 1 예측화면.png`·`앱 2 업로드텍스트.png`·`앱 3 소개탭.png`로 저장, `make_report.py`로 part2에 1차 첨부 확인 후 최종적으로 part1에 수동 병합. 병합 후 더 이상 필요 없는 옛 노트북 스크린샷 8장(`노트북 N ...png`)·`음악무드분류및추천_보고서_part2.pptx`·**`scripts/make_report.py`(pptx 생성 스크립트) 자체를 모두 삭제**함.
@@ -43,6 +43,7 @@
 - **프로토타이핑 스크린샷 캡처 + 보고서 단일 파일 병합** — Streamlit Cloud 배포 앱을 Playwright로 직접 조작(예측+추천 실행, 텍스트 무드 검색 실행, 소개 탭)해 3장 캡처, 1518×886px(=759×443×2, 브라우저/Streamlit 툴바 제거)로 통일해 `submission/`에 저장. 이후 part1/part2를 `submission/보고서.pptx` 단일 파일로 완전 병합(사용자 작업), 옛 노트북 스크린샷 8장과 part2 PPTX는 더 이상 필요 없어 삭제. `scripts/make_report.py`는 레거시로 전환.
 - **TAR 수 파라미터화 + 레거시 일괄 정리** — `scripts/run_download.cmd`에 `%1` 인자 추가(없으면 기존과 동일 30, `run_download.cmd 60`처럼 다른 TAR 수도 바로 실행 가능하도록 준비만 해둠 — 실제 재학습은 미적용). 어디서도 참조되지 않는 레거시 일괄 삭제: `scripts/make_report.py`의 유일한 소비자였던 `plot_training_curves.py`/`plot_prediction_examples.py`(+ 출력물 `artifacts/report_figures/`), 이미 `보고서.pptx`에 임베드된 `artifacts/app_screens/`, 어디서도 호출되지 않는 파이프라인 검증용 `scripts/make_synth_data.py`(+ 출력물 `artifacts/melspecs_synth/`, `artifacts/melspec_manifest_synth.csv`). review-sentiment는 대응되는 레거시가 없어 변경 없음(구조적 1:1 대응 유지 확인됨).
 - **차트 생성 스크립트 복원** — 위에서 삭제한 `plot_training_curves.py`/`plot_prediction_examples.py`는 추후 30→40/50/60 TAR 재학습 시 보고서 차트를 다시 그려야 해서 복원. 둘 다 TAR 개수를 하드코딩하지 않고 그 시점의 `models/cnn/metrics.json`·`artifacts/embeddings.npy`를 그대로 읽어 동작하므로 재학습 후 수정 없이 재실행만 하면 됨 — `plot_prediction_examples.py` 독스트링의 "30-TAR 전용" 표현만 일반화하도록 정정.
+- **30→50 TAR 확장 완료** — 노트북 `MAX_TARS=30→50` 재실행을 끝까지 성공시킴(`keep_local` 듀얼라이트 + `_backfill_from_hf` 두 버그 수정판으로 검증됨). HF Hub에 30~49번 TAR 업로드로 생긴 커밋 21개를 `super_squash_history`로 1개로 재스쿼시. `metrics.json`이 50 TAR(3,585곡) 기준으로 갱신됨에 따라 README.md·`docs/STATUS.md`의 "30 TAR(2,247곡)" 관련 문구 전부 일괄 갱신, 보고서용 차트 3종(`fig_training_curves.png`/`fig_mood_probs_example.png`/`fig_top5_similarity_example.png`) 재생성.
 
 </details>
 
