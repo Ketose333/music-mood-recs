@@ -91,10 +91,13 @@ def extract_subset_from_tar(
     wanted_paths: set[str],
     hf_repo_id: str | None = None,
     hf_path_prefix: str = "data/audio",
+    keep_local: bool = True,
 ) -> int:
-    """Extract wanted members from tar_path. If hf_repo_id is set, members are
-    uploaded directly to that HF dataset repo (one commit per TAR) instead of
-    being written under out_dir — nothing besides the TAR itself touches disk."""
+    """Extract wanted members from tar_path to out_dir. If hf_repo_id is set,
+    each extracted track is also uploaded to that HF dataset repo (one commit
+    per TAR), so the mirror stays in sync immediately. Pass keep_local=False
+    to skip the local write entirely and only upload to HF (e.g. a
+    disk-constrained bulk migration that doesn't need a local copy)."""
     extracted = 0
     operations = [] if hf_repo_id else None
     with tarfile.open(tar_path) as tar:
@@ -110,17 +113,17 @@ def extract_subset_from_tar(
             if src is None:
                 continue
             data = src.read()
+            if keep_local:
+                dest_path = os.path.join(out_dir, rel)
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                with open(dest_path, "wb") as f:
+                    f.write(data)
             if hf_repo_id:
                 from huggingface_hub import CommitOperationAdd
 
                 operations.append(
                     CommitOperationAdd(path_in_repo=f"{hf_path_prefix}/{rel}", path_or_fileobj=BytesIO(data))
                 )
-            else:
-                dest_path = os.path.join(out_dir, rel)
-                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                with open(dest_path, "wb") as f:
-                    f.write(data)
             extracted += 1
     if hf_repo_id and operations:
         from huggingface_hub import HfApi
@@ -141,18 +144,23 @@ def download_and_extract_subset(
     parallel: int = 3,
     hf_repo_id: str | None = None,
     hf_path_prefix: str = "data/audio",
+    keep_local: bool = True,
 ) -> tuple[int, int]:
     """Download+extract TARs 00..max_tars-1, skipping folders whose subset
     tracks are already extracted. Returns (total_extracted, total_wanted).
 
-    If hf_repo_id is set, extracted tracks are uploaded straight to that HF
-    dataset repo and never written under out_dir, so the "already extracted"
-    check below looks at the repo's file list instead of the local disk."""
+    If hf_repo_id is set, each extracted track is also uploaded to that HF
+    dataset repo immediately (in addition to the local write, unless
+    keep_local=False) — so re-running with a larger max_tars later only
+    downloads/uploads the new TARs, both locally and on the HF mirror.
+
+    When keep_local=False (no local copy at all), the "already extracted"
+    check looks at the repo's file list instead of the local disk."""
     os.makedirs(out_dir, exist_ok=True)
     wanted = subset_path_set(subset)
     print(f"Total unique audio paths to extract: {len(wanted)}", flush=True)
 
-    if hf_repo_id:
+    if not keep_local and hf_repo_id:
         from huggingface_hub import HfApi
 
         remote_files = set(HfApi().list_repo_files(repo_id=hf_repo_id, repo_type="dataset"))
@@ -198,7 +206,8 @@ def download_and_extract_subset(
             print(f"  TAR {idx:02d}: skipped (download failed)", flush=True)
             continue
         n = extract_subset_from_tar(
-            tar_paths[idx], out_dir, folder_wanted[idx], hf_repo_id=hf_repo_id, hf_path_prefix=hf_path_prefix
+            tar_paths[idx], out_dir, folder_wanted[idx], hf_repo_id=hf_repo_id, hf_path_prefix=hf_path_prefix,
+            keep_local=keep_local,
         )
         total_extracted += n
         print(f"  TAR {idx:02d}: extracted {n} tracks (cumulative {total_extracted})", flush=True)
