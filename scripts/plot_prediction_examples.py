@@ -2,10 +2,13 @@
 (slide "모델 예측 - 무드 분류" / "모델 예측 - 코사인 유사도 Top-5 추천").
 
 Uses the real trained model (models/cnn/model.pt) and the real embeddings
-already computed for the 30-TAR subset. Only artifacts/embeddings.npy needs
-fetching from the HF Hub assets repo (small, ~tracks x 64 floats) — no raw
-audio or mel-spectrogram download needed, since predict_mood_probs/
-top_k_similar both operate directly on precomputed embeddings.
+already computed for whichever TAR subset the model was last trained on
+(reads models/cnn/* + artifacts/embeddings.npy as-is — no TAR count is
+hardcoded, so rerunning after a 30/40/60-TAR retrain just picks up the new
+artifacts automatically). Only artifacts/embeddings.npy needs fetching from
+the HF Hub assets repo (small, ~tracks x 64 floats) — no raw audio or
+mel-spectrogram download needed, since predict_mood_probs/top_k_similar both
+operate directly on precomputed embeddings.
 
 Produces:
   - artifacts/report_figures/fig_mood_probs_example.png

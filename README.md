@@ -114,7 +114,6 @@ scripts/                     학습/전처리/배포 CLI 진입점
   download_audio.py / extract_melspecs.py / train_cnn.py
   precompute_embeddings.py   추천용 임베딩 사전계산 → artifacts/embeddings.npy
   compute_eda.py             EDA 통계 사전계산 → models/eda/stats.json
-  package_submission.py      제출용 zip 패키징
 
 models/                      학습된 아티팩트 (cnn/metrics.json 포함)
 artifacts/                   멜스펙트로그램(.npy) + 사전계산 임베딩
@@ -166,12 +165,6 @@ streamlit run app.py
 
 ```bash
 python -m pytest tests/ -v
-```
-
-## 제출 패키징
-
-```bash
-python scripts/package_submission.py --name 본인이름
 ```
 
 ## 배포 (Streamlit Cloud)
