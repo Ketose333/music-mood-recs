@@ -50,6 +50,13 @@ def main() -> int:
         default="data/audio",
         help="path prefix inside the HF repo for uploaded tracks (only used with --hf-repo-id)",
     )
+    parser.add_argument(
+        "--keep-local",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="also write extracted tracks under --out even when --hf-repo-id is set (default: on). "
+        "Use --no-keep-local for a disk-constrained bulk migration that only needs the HF copy.",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -74,6 +81,7 @@ def main() -> int:
         args.parallel,
         hf_repo_id=args.hf_repo_id,
         hf_path_prefix=args.hf_path_prefix,
+        keep_local=args.keep_local,
     )
 
     import pandas as pd

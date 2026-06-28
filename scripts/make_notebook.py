@@ -103,17 +103,22 @@ code(
     "subset['train'].head()")
 
 md("오디오 다운로드 — MTG-Jamendo audio-low TAR을 받아 서브셋 트랙만 추출한다. "
-   "이미 추출된 트랙은 건너뛰므로(증분 안전) 재실행해도 다시 받지 않는다.")
+   "이미 추출된 트랙은 건너뛰므로(증분 안전) 재실행해도 다시 받지 않는다. "
+   "HF Hub 데이터셋 레포에도 추출 즉시 자동 업로드되므로(`hf_repo_id` 지정), "
+   "다음에 MAX_TARS를 더 키워도 새로 추가된 TAR만 받아서 그대로 이어 올라간다.")
 code(
     "import requests, tarfile\n"
     "from concurrent.futures import ThreadPoolExecutor, as_completed\n\n"
     + inline_module("src/data/download_audio.py")
     + "\n"
-    "MAX_TARS = 30\n"
+    "MAX_TARS = 50\n"
     "subset = restrict_subset_to_folders(subset, MAX_TARS)  # 이후 셀(EDA·학습)은 모두 이 제한된 서브셋을 기준으로 한다\n"
     "for s in ['train', 'validation', 'test']:\n"
     "    print(f'{s} (restricted): {len(subset[s])} tracks')\n\n"
-    "download_and_extract_subset(subset, 'data/audio', MAX_TARS, parallel=3)\n\n"
+    "download_and_extract_subset(\n"
+    "    subset, 'data/audio', MAX_TARS, parallel=3,\n"
+    "    hf_repo_id='Ketose333/music-mood-recs-assets',  # local + HF Hub 동시 저장, 다음 확장도 이어서 자동 업로드\n"
+    ")\n\n"
     "subset_meta = pd.concat(\n"
     "    [subset[s].assign(split=s) for s in ['train', 'validation', 'test']],\n"
     "    ignore_index=True,\n"
