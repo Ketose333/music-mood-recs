@@ -137,6 +137,31 @@ def extract_subset_from_tar(
     return extracted
 
 
+def _backfill_from_hf(
+    paths: set[str], out_dir: str, hf_repo_id: str, hf_path_prefix: str
+) -> int:
+    """Copy already-extracted tracks straight from the HF dataset repo into
+    out_dir, for folders that are fully present on HF but missing locally
+    (e.g. this machine never had data/audio populated, only the deployed app
+    fetched individual files into the HF cache at runtime). This avoids a
+    redundant multi-hundred-MB TAR re-download+re-extract from the original
+    mirror for data we already have a copy of."""
+    import shutil
+
+    from huggingface_hub import hf_hub_download
+
+    n = 0
+    for p in paths:
+        dest_path = os.path.join(out_dir, p)
+        if os.path.exists(dest_path):
+            continue
+        cached = hf_hub_download(repo_id=hf_repo_id, repo_type="dataset", filename=f"{hf_path_prefix}/{p}")
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        shutil.copyfile(cached, dest_path)
+        n += 1
+    return n
+
+
 def download_and_extract_subset(
     subset: dict[str, pd.DataFrame],
     out_dir: str,
@@ -149,40 +174,67 @@ def download_and_extract_subset(
     """Download+extract TARs 00..max_tars-1, skipping folders whose subset
     tracks are already extracted. Returns (total_extracted, total_wanted).
 
-    If hf_repo_id is set, each extracted track is also uploaded to that HF
-    dataset repo immediately (in addition to the local write, unless
+    If hf_repo_id is set, each newly extracted track is also uploaded to that
+    HF dataset repo immediately (in addition to the local write, unless
     keep_local=False) — so re-running with a larger max_tars later only
-    downloads/uploads the new TARs, both locally and on the HF mirror.
+    downloads/uploads the new TARs.
 
-    When keep_local=False (no local copy at all), the "already extracted"
-    check looks at the repo's file list instead of the local disk."""
+    A folder already present on the HF mirror but missing locally (common
+    when this machine never populated out_dir, e.g. a fresh clone) is
+    backfilled directly from HF instead of re-downloading+re-extracting the
+    original multi-hundred-MB TAR — only folders missing from BOTH local
+    disk and the HF mirror trigger an actual mirror download.
+
+    When keep_local=False, nothing is ever written locally, so "already
+    done" only checks the HF mirror's file list."""
     os.makedirs(out_dir, exist_ok=True)
     wanted = subset_path_set(subset)
     print(f"Total unique audio paths to extract: {len(wanted)}", flush=True)
 
-    if not keep_local and hf_repo_id:
+    remote_files: set[str] | None = None
+    if hf_repo_id:
         from huggingface_hub import HfApi
 
         remote_files = set(HfApi().list_repo_files(repo_id=hf_repo_id, repo_type="dataset"))
 
-        def already_done(p: str) -> bool:
-            return f"{hf_path_prefix}/{p}" in remote_files
-    else:
-        def already_done(p: str) -> bool:
-            return os.path.exists(os.path.join(out_dir, p))
+    def local_done(p: str) -> bool:
+        return os.path.exists(os.path.join(out_dir, p))
+
+    def remote_done(p: str) -> bool:
+        return remote_files is not None and f"{hf_path_prefix}/{p}" in remote_files
 
     folder_wanted: dict[int, set[str]] = {}
     tar_indices: list[int] = []
     already_extracted = 0
+    backfilled = 0
     for idx in range(max_tars):
         folder = f"{idx:02d}"
         paths = {p for p in wanted if p.startswith(f"{folder}/")}
         folder_wanted[idx] = paths
-        if paths and all(already_done(p) for p in paths):
+        if not paths:
+            continue
+        if keep_local and all(local_done(p) for p in paths):
             already_extracted += len(paths)
-            print(f"  TAR {idx:02d}: {len(paths)} subset tracks already extracted, skipping", flush=True)
+            print(f"  TAR {idx:02d}: {len(paths)} subset tracks already extracted locally, skipping", flush=True)
+            continue
+        if not keep_local and remote_files is not None and all(remote_done(p) for p in paths):
+            already_extracted += len(paths)
+            print(f"  TAR {idx:02d}: {len(paths)} subset tracks already on HF Hub, skipping", flush=True)
+            continue
+        if keep_local and remote_files is not None and all(remote_done(p) for p in paths):
+            n = _backfill_from_hf(paths, out_dir, hf_repo_id, hf_path_prefix)  # type: ignore[arg-type]
+            already_extracted += len(paths)
+            backfilled += n
+            print(
+                f"  TAR {idx:02d}: {len(paths)} subset tracks already on HF Hub, "
+                f"backfilled {n} locally (skipped mirror re-download)",
+                flush=True,
+            )
             continue
         tar_indices.append(idx)
+
+    if backfilled:
+        print(f"Backfilled {backfilled} tracks from HF Hub instead of re-downloading their TARs", flush=True)
 
     print(
         f"Downloading {len(tar_indices)} TARs with parallelism={parallel} "
