@@ -19,9 +19,8 @@ env/
 # Logs (not source)
 /logs/
 
-# Report / submission artifacts (binary, not source)
-*.pptx
-*.pdf
+# Submission/report artifacts: local-only, never tracked in git
+/submission/
 
 # Streamlit / secrets
 .streamlit/secrets.toml
