@@ -296,7 +296,10 @@ import requests
 OLLAMA_URL = os.environ.get("MMR_OLLAMA_URL", "http://localhost:11434")
 
 
-OLLAMA_MODEL = os.environ.get("MMR_OLLAMA_MODEL", "gemma3:4b")
+OLLAMA_MODEL = os.environ.get("MMR_OLLAMA_MODEL", "gemma4:e2b")
+
+
+OLLAMA_TIMEOUT = int(os.environ.get("MMR_OLLAMA_TIMEOUT", "90"))
 
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -368,7 +371,7 @@ def parse_mood_response(raw: str, tags: list[str]) -> dict | None:
     }
 
 
-def chat_ollama(prompt: str, timeout: int = LLM_TIMEOUT) -> str:
+def chat_ollama(prompt: str, timeout: int = OLLAMA_TIMEOUT) -> str:
     resp = requests.post(
         f"{OLLAMA_URL}/api/generate",
         json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json"},

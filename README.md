@@ -177,7 +177,7 @@ python -m pytest tests/ -v
 3. `packages.txt`로 필요 apt 패키지 자동 설치됨
 4. Python 버전은 `runtime.txt`(3.11) 기준, 확실한 적용은 앱 대시보드 **⋮ → Settings → Python version**에서 재확인할 것
 5. **LLM 경로 활성화(선택)**: 앱 대시보드 **⋮ → Settings → Secrets**에 `GROQ_API_KEY = "..."` 등록(Streamlit Cloud에는 Ollama가 없어 Groq이 클라우드 LLM 경로). 미등록 시 텍스트 무드 분석은 키워드 휴리스틱, 실음원 추천은 iTunes 무드 검색으로 폴백되어 앱은 정상 동작한다
-6. 로컬 fallback이 필요하면 `streamlit run app.py`로 실행한다 (로컬에서는 Ollama가 떠 있으면 자동 사용: `ollama pull gemma3:4b`)
+6. 로컬 fallback이 필요하면 `streamlit run app.py`로 실행한다 (로컬에서는 Ollama가 떠 있으면 자동 사용 — 기본 모델 `gemma4:e2b`, `MMR_OLLAMA_MODEL`로 변경 가능)
 
 ## 라이선스
 

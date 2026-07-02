@@ -23,7 +23,7 @@
 ## 현재 상태 (2026-07-02)
 
 - **LLM 확장(Phase 2) 구현 완료** — 기존 DL 파이프라인·모듈은 무변경, 신규 코드는 `src/llm/`로 분리.
-  - `src/llm/mood_analyzer.py`: 텍스트 무드 판정을 키워드 휴리스틱 → **LLM 3단 폴백 체인**(Ollama 로컬 `gemma3:4b` → Groq 무료 API `llama-3.3-70b` → 기존 키워드 휴리스틱)으로 교체. JSON 강제 + 태그 밖 무드(환각) 파서 거부. Groq 키는 env/`st.secrets`의 `GROQ_API_KEY`로만 주입.
+  - `src/llm/mood_analyzer.py`: 텍스트 무드 판정을 키워드 휴리스틱 → **LLM 3단 폴백 체인**(Ollama 로컬 `gemma4:e2b` → Groq 무료 API `llama-3.3-70b` → 기존 키워드 휴리스틱)으로 교체. JSON 강제 + 태그 밖 무드(환각) 파서 거부. Groq 키는 env/`st.secrets`의 `GROQ_API_KEY`로만 주입.
   - `src/llm/music_search.py`: **실제 발매 음원 Top-5** — LLM이 무드에 맞는 실존 곡을 제안하면 iTunes Search API(무료·키 불필요)로 검증(환각 차단), Spotify·YouTube Music·Apple Music **검색 링크만** 제공(직접 재생 없음 — 저작권 안전). LLM 불가 시 무드 키워드 iTunes 검색 폴백.
   - `app.py`: 예측 탭 3개 입력 모드 전부에 "🌐 실제 음원 Top-5" 섹션 추가(1시간 `st.cache_data` 캐시), 텍스트 모드는 LLM 분석 경로·근거·확신도 표시. AUTO-SYNC BLOCKS에 `src/llm/` 2개 모듈 추가, `make_notebook.py`에 §9 LLM 확장 섹션(모듈 인라인 + 데모 셀) 추가 — 제출 구조(단일 py/ipynb) 그대로 유지.
   - 두 모듈 모두 태그 목록만 입력받으므로 **데이터셋 규모(50/100 TAR)와 무관**하게 동작.
@@ -62,7 +62,7 @@
 ## 남은 작업 (P0, LLM 과제 데드라인 2026-07-07 내 필수)
 
 - [ ] Streamlit Cloud Secrets에 `GROQ_API_KEY` 등록 후 재부팅 → 클라우드에서 LLM 경로(텍스트 분석 provider=groq) 실동작 확인
-- [ ] 로컬 Ollama(`gemma3:4b`)로 발표 시연 리허설 — 텍스트 무드 분석 + 실음원 Top-5 동선 포함
+- [ ] 로컬 Ollama(`gemma4:e2b`)로 발표 시연 리허설 — 텍스트 무드 분석 + 실음원 Top-5 동선 포함
 - [ ] 보고서(PPT/PDF)에 LLM 확장 슬라이드 추가 — `04.LLM 산출물 예시` 스타일(기존 DL 한계 → LLM 확장 목표 → 3단 폴백 아키텍처 → 프롬프트·환각 대응 → 프로토타입 화면 → 한계/향후) 참고
 - [ ] `submission/`의 ipynb + py + 보고서를 zip(`김관영_딥러닝_LLM프로젝트.zip` 형식)으로 묶어 이메일 제출(ahnhg2000@gmail.com, 2026-07-07 17:30)
 
