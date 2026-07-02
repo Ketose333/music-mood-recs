@@ -1,6 +1,6 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-07-02
+마지막 갱신: 2026-07-02 (Ollama 모델 확정 + 발표자료 개요 반영)
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
@@ -30,6 +30,8 @@
 - **제출 노트북 슬림화(2026-07-02)** — 채점 PC에서 불필요/위험한 부분 제거: `hf_sync.py` 인라인 + `upload_missing_files`(멜스펙)·`upload_file`(embeddings) 호출 삭제(쓰기 토큰 없는 PC에서 embeddings 업로드가 실패하던 잠재 버그이기도 함), 중복 개요 md 병합, 누락 경고 축소. 오디오 다운로드의 `hf_repo_id`는 **읽기 전용 백필**(TAR 재다운로드 회피)이라 유지 — 새 PC에서도 공개 레포라 토큰 없이 동작. **주의: 이제 노트북 재실행은 HF Hub에 업로드하지 않음** — TAR 수 확장 시 `scripts/extract_melspecs.py --hf-repo-id` / `scripts/precompute_embeddings.py --hf-repo-id`로 업로드할 것(오디오는 `scripts/download_audio.py --hf-repo-id`).
   - 테스트: 신규 `tests/test_mood_analyzer.py`(13) + `tests/test_music_search.py`(12) 포함 **전체 54건 통과**(기존 29건 회귀 없음). LLM/HTTP는 전부 모킹 — 오프라인에서도 테스트 가능.
 - Streamlit Cloud 시연 준비: 앱 대시보드 Secrets에 `GROQ_API_KEY` 등록 필요(미등록 시 텍스트 분석은 키워드 휴리스틱, 실음원은 iTunes 무드 검색으로 폴백 — 크래시 없음).
+- **Ollama 로컬 모델 확정** — 로컬 설치된 `gemma4:e2b`(7.2GB) vs `gemma2:latest`(5.4GB) 두 모델을 동일 무드 분석 프롬프트로 실측 비교: gemma4:e2b가 웜업 후 약 14초, gemma2:latest는 44~85초로 약 3배 느림(JSON 품질은 동등). `gemma4:e2b`를 기본값(`MMR_OLLAMA_MODEL`)으로 채택. 첫 호출은 모델 로드 포함 ~60초라 Ollama 전용 타임아웃을 90초로 분리(`MMR_OLLAMA_TIMEOUT`). 로컬에서 키워드 사전 밖 문장("싱숭생숭해서 뭘 해야 할지 모르겠어")도 `provider=ollama`로 정상 분석되는 것 실측 확인.
+- **발표자료 개요 문서 작성** — [`docs/llm-presentation-outline.md`](llm-presentation-outline.md) 신규. `submission/music_mood_recs.pptx`(현재 22슬라이드, DL 덱 그대로 복사된 상태 — LLM 슬라이드 없음)에 삽입할 슬라이드별 제목·본문·표·발표 멘트를 복붙 가능한 형태로 정리(문제정의→설계원칙→기술스택→3단 폴백 아키텍처→프롬프트 설계→**환각 대응**→로컬 모델 벤치마크→프로토타입 화면 2장→트러블슈팅, 총 10장). 15건 예시 산출물 분석 결과("DL 그대로 + LLM 1장"인 얇은 케이스 2건과 구분되도록 설계) 반영. **pptx 실편집은 사용자 직접 진행 예정, 아직 미반영.**
 
 ## 이전 상태 (2026-06-28, DL 과제 제출 시점)
 
@@ -61,9 +63,11 @@
 
 ## 남은 작업 (P0, LLM 과제 데드라인 2026-07-07 내 필수)
 
-- [ ] Streamlit Cloud Secrets에 `GROQ_API_KEY` 등록 후 재부팅 → 클라우드에서 LLM 경로(텍스트 분석 provider=groq) 실동작 확인
+- [ ] Streamlit Cloud Secrets에 `GROQ_API_KEY` 등록 후 재부팅 → 클라우드에서 LLM 경로(텍스트 분석 provider=groq) 실동작 확인 — **사용자가 직접 클라우드에서 실행 후 결과 공유 예정**
+- [x] ~~로컬 Ollama 모델 확정~~ — `gemma4:e2b` 채택(속도 3배, 품질 동등), 텍스트 무드 분석 실동작 검증 완료
 - [ ] 로컬 Ollama(`gemma4:e2b`)로 발표 시연 리허설 — 텍스트 무드 분석 + 실음원 Top-5 동선 포함
-- [ ] 보고서(PPT/PDF)에 LLM 확장 슬라이드 추가 — `04.LLM 산출물 예시` 스타일(기존 DL 한계 → LLM 확장 목표 → 3단 폴백 아키텍처 → 프롬프트·환각 대응 → 프로토타입 화면 → 한계/향후) 참고
+- [x] ~~보고서 LLM 슬라이드 개요 작성~~ — [`docs/llm-presentation-outline.md`](llm-presentation-outline.md) 완료(복붙용, 10슬라이드)
+- [ ] 위 개요를 `submission/music_mood_recs.pptx`에 실제 반영(스크린샷 2장 캡처 포함) — **사용자 직접 편집**
 - [ ] `submission/`의 ipynb + py + 보고서를 zip(`김관영_딥러닝_LLM프로젝트.zip` 형식)으로 묶어 이메일 제출(ahnhg2000@gmail.com, 2026-07-07 17:30)
 
 ## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)
