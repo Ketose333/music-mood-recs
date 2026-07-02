@@ -1,6 +1,6 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-06-28
+마지막 갱신: 2026-07-02
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
@@ -17,9 +17,20 @@
 
 ## 데드라인
 
-**2026-07-01 09:00 발표·시연·제출.** 산출물: 학습 노트북(ipynb) + 소스(py) + 보고서(PPT) → zip 1개 이메일 제출(ahnhg2000@gmail.com).
+- ~~2026-07-01 09:00 DL 과제 발표·시연·제출~~ — **완료** (`submission/김관영_딥러닝프로젝트.*` 3종 제출).
+- **2026-07-07 17:30 LLM 과제 제출 / 07-07 오전 발표.** 산출물: 보고서(PPT/PDF) + 소스(ipynb·py) + Streamlit Cloud 시연 → zip 1개 이메일 제출(ahnhg2000@gmail.com, 예: `홍길동_딥러닝_LLM프로젝트.zip`). 범위·요구사항은 [`prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md) 참고.
 
-## 현재 상태 (2026-06-28)
+## 현재 상태 (2026-07-02)
+
+- **LLM 확장(Phase 2) 구현 완료** — 기존 DL 파이프라인·모듈은 무변경, 신규 코드는 `src/llm/`로 분리.
+  - `src/llm/mood_analyzer.py`: 텍스트 무드 판정을 키워드 휴리스틱 → **LLM 3단 폴백 체인**(Ollama 로컬 `gemma3:4b` → Groq 무료 API `llama-3.3-70b` → 기존 키워드 휴리스틱)으로 교체. JSON 강제 + 태그 밖 무드(환각) 파서 거부. Groq 키는 env/`st.secrets`의 `GROQ_API_KEY`로만 주입.
+  - `src/llm/music_search.py`: **실제 발매 음원 Top-5** — LLM이 무드에 맞는 실존 곡을 제안하면 iTunes Search API(무료·키 불필요)로 검증(환각 차단), Spotify·YouTube Music·Apple Music **검색 링크만** 제공(직접 재생 없음 — 저작권 안전). LLM 불가 시 무드 키워드 iTunes 검색 폴백.
+  - `app.py`: 예측 탭 3개 입력 모드 전부에 "🌐 실제 음원 Top-5" 섹션 추가(1시간 `st.cache_data` 캐시), 텍스트 모드는 LLM 분석 경로·근거·확신도 표시. AUTO-SYNC BLOCKS에 `src/llm/` 2개 모듈 추가, `make_notebook.py`에 §9 LLM 확장 섹션(모듈 인라인 + 데모 셀) 추가 — 제출 구조(단일 py/ipynb) 그대로 유지.
+  - 두 모듈 모두 태그 목록만 입력받으므로 **데이터셋 규모(50/100 TAR)와 무관**하게 동작.
+  - 테스트: 신규 `tests/test_mood_analyzer.py`(13) + `tests/test_music_search.py`(12) 포함 **전체 54건 통과**(기존 29건 회귀 없음). LLM/HTTP는 전부 모킹 — 오프라인에서도 테스트 가능.
+- Streamlit Cloud 시연 준비: 앱 대시보드 Secrets에 `GROQ_API_KEY` 등록 필요(미등록 시 텍스트 분석은 키워드 휴리스틱, 실음원은 iTunes 무드 검색으로 폴백 — 크래시 없음).
+
+## 이전 상태 (2026-06-28, DL 과제 제출 시점)
 
 - 모델: `models/cnn/` — 50 TAR(3,585곡) 데이터로 재학습 완료. **best val F1(micro)=0.2994**, **test F1(micro)=0.2618 / accuracy=0.1624 / ROC-AUC=0.7593**(태그: happy/energetic/relaxing/film/dark).
 - 노트북: `submission/music_mood_recs.ipynb` 50 TAR 기준 전체 실행(run all) 끝까지 성공(다운로드~멜스펙~CNN 학습~테스트셋 평가). HF Hub(`Ketose333/music-mood-recs-assets`)에 30~49번 TAR 자동 업로드 후 커밋 히스토리 21개→1개로 재스쿼시 완료. 보고서용 차트(`fig_training_curves.png`/`fig_mood_probs_example.png`/`fig_top5_similarity_example.png`)도 새 결과로 재생성됨.
@@ -47,19 +58,20 @@
 
 </details>
 
-## 남은 작업 (P0, 데드라인 내 필수)
+## 남은 작업 (P0, LLM 과제 데드라인 2026-07-07 내 필수)
 
-- [x] **Streamlit 앱 스크린샷 3장 캡처** → `submission/앱 1 예측화면.png` / `앱 2 업로드텍스트.png` / `앱 3 소개탭.png` (1518×886px, 순수 앱 화면)
-- [x] part1 + part2 최종 PPT로 통합 → `submission/보고서.pptx` 단일 파일로 완료(사용자 직접 작업, 옛 part2/노트북 스크린샷 8장 삭제)
-- [ ] 발표 시연 리허설 — 입력 방식 3가지(라이브러리 선택/업로드/텍스트) 전부 시연 동선에 포함
-- [ ] `submission/music_mood_recs.ipynb` + `music_mood_recs.py` + `보고서.pptx` 3개를 수동으로 zip(`홍길동_딥러닝프로젝트.zip` 형식)으로 묶어 이메일 제출(ahnhg2000@gmail.com, 2026-07-01 09:00). **자동 패키징 스크립트는 삭제됨 — 수동 압축**
+- [ ] Streamlit Cloud Secrets에 `GROQ_API_KEY` 등록 후 재부팅 → 클라우드에서 LLM 경로(텍스트 분석 provider=groq) 실동작 확인
+- [ ] 로컬 Ollama(`gemma3:4b`)로 발표 시연 리허설 — 텍스트 무드 분석 + 실음원 Top-5 동선 포함
+- [ ] 보고서(PPT/PDF)에 LLM 확장 슬라이드 추가 — `04.LLM 산출물 예시` 스타일(기존 DL 한계 → LLM 확장 목표 → 3단 폴백 아키텍처 → 프롬프트·환각 대응 → 프로토타입 화면 → 한계/향후) 참고
+- [ ] `submission/`의 ipynb + py + 보고서를 zip(`김관영_딥러닝_LLM프로젝트.zip` 형식)으로 묶어 이메일 제출(ahnhg2000@gmail.com, 2026-07-07 17:30)
 
 ## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)
 
+- [x] ~~**LLM 연동**: 텍스트 무드 검색을 키워드 휴리스틱 → LLM 기반으로 고도화~~ — **2026-07-02 완료** (`src/llm/mood_analyzer.py`)
+- [x] ~~**LLM 연동**: 추천 곡에 메타데이터(제목/아티스트)·설명 노출~~ — **2026-07-02 완료** (`src/llm/music_search.py`, 실음원 Top-5 + 서비스 링크)
 - [ ] CRNN 확장(베이스라인 성능 낮을 시)
 - [ ] 추천 정량 평가 지표 설계(정성 사례 비교 위주로 보고서 작성)
-- [ ] **LLM 연동**: 텍스트 무드 검색을 키워드 휴리스틱 → LLM/임베딩 기반으로 고도화 — DL 과제 종료 후 동일 레포의 LLM 과제 단계에서 진행, 이번 제출 범위 아님(7월 1일 이전 실구현 금지)
-- [ ] **LLM 연동**: 추천 곡에 메타데이터(제목/아티스트)·설명을 노출해 "데이터셋 안에서 뭔지 모르는 곡을 추천받는" 문제 해소 — 동일하게 LLM 과제 단계로 이월(7월 1일 이전 실구현 금지)
+- [ ] Spotify Web API 연동으로 검색 링크 → 정확한 곡 페이지 링크 고도화(Phase 1 원범위)
 
 ## 알려진 이슈 (열린 것만)
 

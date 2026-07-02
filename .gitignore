@@ -22,6 +22,12 @@ env/
 # Submission/report artifacts: local-only, never tracked in git
 /submission/
 
+# Assignment reference material (course handouts): local-only
+/04.LLM 산출물 예시/
+
+# Claude Code local config (launch.json etc.)
+/.claude/
+
 # Streamlit / secrets
 .streamlit/secrets.toml
 .env

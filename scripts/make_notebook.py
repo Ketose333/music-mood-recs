@@ -62,12 +62,14 @@ def inline_module(path: str) -> str:
 
 
 # ===== 1. 개요 및 현황 =====
-md("# music-mood-recs - 음악 무드 분류 + 콘텐츠 기반 추천\n\n"
+md("# music-mood-recs - 음악 무드 분류 + 추천 + LLM 확장\n\n"
    "MTG-Jamendo 무드/테마 서브셋으로 CNN 무드 분류 모델을 학습하고, "
-   "분류 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천한다.\n\n"
+   "분류 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천한다. "
+   "LLM 확장(§9)으로 자연어 무드 분석과 실제 발매 음원 추천을 더한다.\n\n"
    "- 데이터: MTG-Jamendo mood/theme subset (상위 5 태그)\n"
    "- 모델: 단순 CNN (log-mel spectrogram 입력)\n"
-   "- 추천: 분류 임베딩 + cosine similarity Top-5")
+   "- 추천: 분류 임베딩 + cosine similarity Top-5\n"
+   "- LLM: Ollama(로컬) → Groq(무료 API) → 키워드 휴리스틱 폴백 체인 + iTunes 검증 실음원 추천")
 
 # ===== 2. 과제 범위 =====
 md("## 1. 개요 및 현황\n\n"
@@ -356,21 +358,70 @@ code(
     "    upload_file(HF_REPO_ID, EMBEDDINGS_NPY)\n"
     "    print(f'Saved + uploaded {embeddings.shape} embeddings -> {EMBEDDINGS_NPY} ({HF_REPO_ID}) — app.py reads this for inference')")
 
-# ===== 10. 프로토타입 =====
-md("## 9. 프로토타입 (Streamlit)\n\n"
-   "``streamlit run app.py`` 로 실행 — 곡 선택 -> 무드 예측 -> Top-5 추천")
+# ===== 10. LLM 확장 =====
+md("## 9. LLM 확장 — 자연어 무드 분석 + 실제 음원 추천\n\n"
+   "딥러닝 파이프라인(위)은 그대로 두고, 두 가지 한계를 LLM으로 보완한다.\n\n"
+   "1. **자연어 무드 분석**: 키워드 휴리스틱 → LLM 3단 폴백 체인으로 교체 "
+   "(Ollama 로컬 → Groq 무료 API → 키워드 휴리스틱). LLM 응답은 JSON으로 강제하고 "
+   "5개 학습 태그 밖의 무드(환각)는 파서에서 거부해 다음 단계로 폴백한다.\n"
+   "2. **실제 발매 음원 Top-5**: 데이터셋 내부 곡만 추천하던 한계를 해소. "
+   "LLM이 무드에 맞는 실존 곡을 제안하면 iTunes Search API(무료·키 불필요)로 "
+   "실존 여부를 검증(환각 차단)하고, Spotify · YouTube Music · Apple Music "
+   "검색 링크만 제공한다(직접 재생 없음 — 저작권 안전).\n\n"
+   "두 모듈 모두 태그 목록만 입력받으므로 데이터셋 규모(50/100 TAR)와 무관하게 동작한다.")
+code(
+    "import json\n"
+    "import re\n"
+    "import urllib.parse\n"
+    "from dataclasses import dataclass, field\n"
+    "import requests\n\n"
+    + inline_module("src/llm/mood_analyzer.py")
+    + "\n"
+    + inline_module("src/llm/music_search.py"))
 
-# ===== 11. 보완사항 =====
-md("## 10. 보완사항 및 개선점\n\n"
+md("LLM 무드 분석 + 실제 음원 추천 데모 — Ollama/Groq이 없으면 자동으로 "
+   "키워드 휴리스틱과 iTunes 무드 검색으로 폴백하므로 어느 PC에서도 그대로 실행된다. "
+   "(Groq을 쓰려면 환경변수 `GROQ_API_KEY` 설정)")
+code(
+    "GROQ_API_KEY = os.environ.get('GROQ_API_KEY')\n\n"
+    "user_text = '오늘 너무 우울하고 힘들어서 위로받을 음악 듣고 싶어'\n"
+    "analysis = analyze_mood(user_text, tags, groq_api_key=GROQ_API_KEY)\n"
+    "print(f'입력: {user_text}')\n"
+    "print(f'무드: {analysis.mood} (확신도 {analysis.confidence:.0%}, 경로: {analysis.provider})')\n"
+    "print(f'근거: {analysis.reason}')\n\n"
+    "# 추정된 무드로 라이브러리 곡 추천 (기존 분류기 확률 재사용 — DL 파이프라인 그대로)\n"
+    "track_probs = predict_mood_probs(model, embeddings)\n"
+    "tag_idx = tags.index(analysis.mood)\n"
+    "order = np.argsort(-track_probs[:, tag_idx])[:5]\n"
+    "print(f'\\n라이브러리 Top-5 ({analysis.mood}):', [track_ids[i] for i in order])\n\n"
+    "# 실제 발매 음원 Top-5 (LLM 제안 -> iTunes 검증, 실패 시 무드 키워드 검색)\n"
+    "real_tracks, provider = recommend_real_tracks(\n"
+    "    analysis.mood, user_text=user_text, search_keywords=analysis.search_keywords,\n"
+    "    k=5, groq_api_key=GROQ_API_KEY)\n"
+    "print(f'\\n실제 음원 Top-5 (경로: {provider}):')\n"
+    "for rt in real_tracks:\n"
+    "    print(f'- {rt.title} — {rt.artist} | {rt.links[\"Spotify\"]}')")
+
+# ===== 11. 프로토타입 =====
+md("## 10. 프로토타입 (Streamlit)\n\n"
+   "``streamlit run app.py`` 로 실행 — 곡 선택/오디오 업로드/텍스트 입력 -> 무드 예측 "
+   "-> 라이브러리 Top-5 + 실제 음원 Top-5 (스트리밍 서비스 링크)")
+
+# ===== 12. 보완사항 =====
+md("## 11. 보완사항 및 개선점\n\n"
    "1. CRNN 확장 (시간적 패턴 학습으로 성능 향상 가능)\n"
-   "2. 데이터 서브셋 확대 (현재 30 TAR 폴더만 사용, 전체 100폴더로 확대 시 약 3.3배 규모)\n"
-   "3. 추천 정량 평가 지표 도입 (현재 정성 사례 비교만)")
+   "2. 데이터 서브셋 확대 (현재 50 TAR 폴더 사용, 전체 100폴더로 확대 시 약 2배 규모)\n"
+   "3. 추천 정량 평가 지표 도입 (현재 정성 사례 비교만)\n"
+   "4. LLM 무드 분석의 다국어 확장 및 무드 태그 세분화 (현재 5개 태그로 제한)\n"
+   "5. Spotify Web API 연동으로 검색 링크 -> 정확한 곡 페이지 링크 고도화")
 
-# ===== 12. 후기 =====
-md("## 11. 소감 및 후기\n\n"
-   "오디오 모달리티와 추천 시스템을 단일 모델로 증명한 DL 포트폴리오 프로젝트. "
+# ===== 13. 후기 =====
+md("## 12. 소감 및 후기\n\n"
+   "오디오 모달리티와 추천 시스템을 단일 모델로 증명한 DL 프로젝트에, "
+   "LLM 기반 자연어 무드 분석과 실제 발매 음원 추천을 확장으로 얹었다. "
    "분류 임베딩을 추천에 재사용하는 가설을 검증하고, CPU 환경에서도 작은 CNN으로 "
-   "합리적인 무드 분류가 가능함을 확인했다.")
+   "합리적인 무드 분류가 가능함을 확인했다. LLM 확장에서는 폴백 체인과 "
+   "카탈로그 검증(환각 차단)으로 무료 환경에서도 안정적으로 동작하는 구조를 설계했다.")
 
 nb['cells'] = cells
 nb['metadata']['kernelspec'] = {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}

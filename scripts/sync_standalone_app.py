@@ -39,6 +39,10 @@ BLOCKS: list[tuple[Path, list[str]]] = [
         ],
     ),
     (Path("src/evaluation/metrics.py"), ["build_comparison_table", "load_all_metrics"]),
+    # LLM extension — whole modules; must come after src/recommend/similar.py
+    # (mood_analyzer's fallback calls infer_mood_from_text defined there).
+    (Path("src/llm/mood_analyzer.py"), ["*"]),
+    (Path("src/llm/music_search.py"), ["*"]),
 ]
 
 

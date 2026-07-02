@@ -285,6 +285,341 @@ def load_all_metrics(models_dir: str = "models") -> dict[str, dict]:
 # <<< AUTO-SYNCED <<<
 
 
+# >>> AUTO-SYNCED from src/llm/mood_analyzer.py (run scripts/sync_standalone_app.py) >>>
+import json
+import os
+import re
+from dataclasses import dataclass, field
+import requests
+
+
+OLLAMA_URL = os.environ.get("MMR_OLLAMA_URL", "http://localhost:11434")
+
+
+OLLAMA_MODEL = os.environ.get("MMR_OLLAMA_MODEL", "gemma3:4b")
+
+
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+
+GROQ_MODEL = os.environ.get("MMR_GROQ_MODEL", "llama-3.3-70b-versatile")
+
+
+LLM_TIMEOUT = 30
+
+
+@dataclass
+class MoodAnalysis:
+    """One text-input mood decision, with enough context to show *why*."""
+
+    mood: str
+    confidence: float
+    reason: str
+    search_keywords: list[str] = field(default_factory=list)
+    provider: str = "keyword"  # "ollama" | "groq" | "keyword"
+
+
+def build_mood_prompt(text: str, tags: list[str]) -> str:
+    tag_list = ", ".join(tags)
+    return (
+        "당신은 음악 무드 분석가입니다. 사용자의 문장을 읽고 아래 5개 무드 태그 중 "
+        "가장 어울리는 하나를 고르세요.\n"
+        f"허용 태그(반드시 이 중 하나만): {tag_list}\n\n"
+        "규칙:\n"
+        "- 반드시 JSON 객체 하나만 출력하세요. 다른 텍스트/마크다운 금지.\n"
+        '- 형식: {"mood": "<태그>", "confidence": 0.0~1.0, '
+        '"reason": "<한국어 한두 문장>", "search_keywords": ["<영어 음악 검색 키워드 2~4개>"]}\n'
+        "- search_keywords는 이 기분에 맞는 실제 음원을 찾기 위한 영어 검색어입니다 "
+        '(예: "upbeat pop", "calm acoustic").\n\n'
+        f"사용자 문장: {text}"
+    )
+
+
+def parse_mood_response(raw: str, tags: list[str]) -> dict | None:
+    """Extract and validate the JSON object from an LLM reply.
+
+    LLMs sometimes wrap JSON in markdown fences or prose, so grab the first
+    ``{...}`` span. Returns None (caller falls through to the next tier) when
+    the reply has no valid JSON or hallucinates a mood outside the tag set.
+    """
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    mood = str(data.get("mood", "")).strip().lower()
+    if mood not in tags:
+        return None
+    try:
+        confidence = min(max(float(data.get("confidence", 0.5)), 0.0), 1.0)
+    except (TypeError, ValueError):
+        confidence = 0.5
+    keywords = data.get("search_keywords") or []
+    if not isinstance(keywords, list):
+        keywords = []
+    keywords = [str(k).strip() for k in keywords if str(k).strip()][:4]
+    return {
+        "mood": mood,
+        "confidence": confidence,
+        "reason": str(data.get("reason", "")).strip(),
+        "search_keywords": keywords,
+    }
+
+
+def chat_ollama(prompt: str, timeout: int = LLM_TIMEOUT) -> str:
+    resp = requests.post(
+        f"{OLLAMA_URL}/api/generate",
+        json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json"},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return resp.json()["response"]
+
+
+def chat_groq(prompt: str, api_key: str, timeout: int = LLM_TIMEOUT) -> str:
+    resp = requests.post(
+        GROQ_API_URL,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": GROQ_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "response_format": {"type": "json_object"},
+        },
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
+def llm_chat(prompt: str, groq_api_key: str | None = None) -> tuple[str, str] | None:
+    """Try each LLM tier in order; return (raw_reply, provider) or None.
+
+    Network/HTTP errors just move on to the next tier — the caller always has
+    the keyword heuristic as a final answer, so no tier failure is fatal.
+    """
+    try:
+        return chat_ollama(prompt), "ollama"
+    except (requests.RequestException, KeyError, ValueError):
+        pass
+    if groq_api_key:
+        try:
+            return chat_groq(prompt, groq_api_key), "groq"
+        except (requests.RequestException, KeyError, ValueError):
+            pass
+    return None
+
+
+def analyze_mood(text: str, tags: list[str], groq_api_key: str | None = None) -> MoodAnalysis:
+    """Map a free-text feeling onto one of the trained mood ``tags``.
+
+    Tier 1/2 (Ollama/Groq) return the LLM's own reasoning and music-search
+    keywords; tier 3 reproduces the original keyword-heuristic behaviour so
+    the feature keeps working with no LLM available at all.
+    """
+    prompt = build_mood_prompt(text, tags)
+    chat = llm_chat(prompt, groq_api_key=groq_api_key)
+    if chat is not None:
+        raw, provider = chat
+        parsed = parse_mood_response(raw, tags)
+        if parsed is not None:
+            return MoodAnalysis(provider=provider, **parsed)
+
+    best_tag, counts = infer_mood_from_text(text, tags)
+    if best_tag is None:
+        best_tag = tags[0]
+        reason = "키워드 매칭 없음 — 기본 태그로 대체 (LLM 미사용)"
+    else:
+        reason = f"한국어 감정 키워드 {counts[best_tag]}건 매칭 (LLM 미사용)"
+    return MoodAnalysis(
+        mood=best_tag,
+        confidence=min(counts.get(best_tag, 0) / 3.0, 1.0),
+        reason=reason,
+        search_keywords=[],
+        provider="keyword",
+    )
+# <<< AUTO-SYNCED <<<
+
+
+# >>> AUTO-SYNCED from src/llm/music_search.py (run scripts/sync_standalone_app.py) >>>
+import json
+import re
+import urllib.parse
+from dataclasses import dataclass, field
+import requests
+
+
+ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
+
+
+ITUNES_TIMEOUT = 10
+
+
+MOOD_SEARCH_TERMS: dict[str, str] = {
+    "happy": "happy upbeat feel good pop",
+    "energetic": "energetic workout power up",
+    "relaxing": "relaxing calm acoustic chill",
+    "film": "epic cinematic soundtrack score",
+    "dark": "dark moody melancholic",
+}
+
+
+@dataclass
+class RealTrack:
+    """One verified, released track with per-service outbound links."""
+
+    title: str
+    artist: str
+    album: str = ""
+    artwork_url: str = ""
+    genre: str = ""
+    links: dict[str, str] = field(default_factory=dict)
+
+
+def service_links(title: str, artist: str, itunes_url: str = "") -> dict[str, str]:
+    """Search-page links per streaming service (no playback, no API keys)."""
+    q = urllib.parse.quote(f"{title} {artist}")
+    links = {
+        "Spotify": f"https://open.spotify.com/search/{q}",
+        "YouTube Music": f"https://music.youtube.com/search?q={q}",
+        "Apple Music": itunes_url or f"https://music.apple.com/kr/search?term={q}",
+    }
+    return links
+
+
+def _to_real_track(item: dict) -> RealTrack:
+    title = item.get("trackName", "")
+    artist = item.get("artistName", "")
+    return RealTrack(
+        title=title,
+        artist=artist,
+        album=item.get("collectionName", ""),
+        artwork_url=item.get("artworkUrl100", ""),
+        genre=item.get("primaryGenreName", ""),
+        links=service_links(title, artist, item.get("trackViewUrl", "")),
+    )
+
+
+def itunes_search(term: str, limit: int = 5, country: str = "KR") -> list[RealTrack]:
+    """Search released tracks on the iTunes Search API (free, keyless)."""
+    resp = requests.get(
+        ITUNES_SEARCH_URL,
+        params={"term": term, "media": "music", "entity": "song", "limit": limit, "country": country},
+        timeout=ITUNES_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return [_to_real_track(r) for r in resp.json().get("results", []) if r.get("trackName")]
+
+
+def verify_track(title: str, artist: str, country: str = "KR") -> RealTrack | None:
+    """Return the track's real metadata if it exists on iTunes, else None.
+
+    This is the anti-hallucination gate: an LLM-invented song won't match any
+    catalog entry and gets dropped instead of shown to the user.
+    """
+    try:
+        results = itunes_search(f"{title} {artist}", limit=1, country=country)
+    except requests.RequestException:
+        return None
+    return results[0] if results else None
+
+
+def build_song_prompt(mood: str, user_text: str, k: int) -> str:
+    context = f"\n사용자의 원래 문장(분위기 참고): {user_text}" if user_text else ""
+    return (
+        f"'{mood}' 무드에 어울리는, 실제로 발매된 유명한 곡을 {k + 3}개 추천하세요."
+        f"{context}\n\n"
+        "규칙:\n"
+        "- 실존하는 곡만. 확실하지 않은 곡은 넣지 마세요.\n"
+        "- 반드시 JSON 객체 하나만 출력: "
+        '{"songs": [{"title": "<곡명>", "artist": "<아티스트>"}, ...]}\n'
+        "- 다양한 아티스트로 구성하세요 (한 아티스트 최대 1곡)."
+    )
+
+
+def parse_song_response(raw: str) -> list[tuple[str, str]]:
+    """Extract (title, artist) pairs from the LLM reply; [] when unparseable."""
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return []
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return []
+    pairs: list[tuple[str, str]] = []
+    for song in data.get("songs", []) if isinstance(data, dict) else []:
+        if not isinstance(song, dict):
+            continue
+        title = str(song.get("title", "")).strip()
+        artist = str(song.get("artist", "")).strip()
+        if title and artist:
+            pairs.append((title, artist))
+    return pairs
+
+
+def recommend_real_tracks(
+    mood: str,
+    user_text: str = "",
+    search_keywords: list[str] | None = None,
+    k: int = 5,
+    groq_api_key: str | None = None,
+    country: str = "KR",
+) -> tuple[list[RealTrack], str]:
+    """Top-k released tracks for ``mood``; returns (tracks, provider).
+
+    provider: "ollama"/"groq" when LLM candidates (iTunes-verified) were used,
+    "itunes" when only the keyword search produced results. LLM candidates are
+    verified one by one and topped up from keyword search if too few survive.
+    """
+    tracks: list[RealTrack] = []
+    provider = "itunes"
+    seen: set[tuple[str, str]] = set()
+
+    chat = llm_chat(build_song_prompt(mood, user_text, k), groq_api_key=groq_api_key)
+    if chat is not None:
+        raw, llm_provider = chat
+        for title, artist in parse_song_response(raw):
+            if len(tracks) >= k:
+                break
+            found = verify_track(title, artist, country=country)
+            if found is None:
+                continue
+            key = (found.title.lower(), found.artist.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            tracks.append(found)
+        if tracks:
+            provider = llm_provider
+
+    if len(tracks) < k:
+        term = " ".join(search_keywords) if search_keywords else MOOD_SEARCH_TERMS.get(mood, f"{mood} music")
+        try:
+            candidates = itunes_search(term, limit=max(k * 3, 25), country=country)
+        except requests.RequestException:
+            candidates = []
+        # Keyword search often returns one artist's whole album back-to-back;
+        # fill with unique artists first, then allow repeats if still short.
+        for allow_repeat_artist in (False, True):
+            for found in candidates:
+                if len(tracks) >= k:
+                    break
+                key = (found.title.lower(), found.artist.lower())
+                if key in seen:
+                    continue
+                if not allow_repeat_artist and any(
+                    t.artist.lower() == found.artist.lower() for t in tracks
+                ):
+                    continue
+                seen.add(key)
+                tracks.append(found)
+
+    return tracks[:k], provider
+# <<< AUTO-SYNCED <<<
+
+
 MODEL_DIR = os.environ.get("MMR_MODEL_DIR", "models/cnn")
 AUDIO_DIR = os.environ.get("MMR_AUDIO_DIR", "data/audio")
 MELSPEC_DIR = os.environ.get("MMR_MELSPEC_DIR", "artifacts/melspecs")
@@ -433,6 +768,62 @@ def _render_recommendations(idxs: np.ndarray, sims: np.ndarray, score_label: str
                 rec_col_audio.audio(rec_audio)
 
 
+def _get_groq_api_key() -> str | None:
+    """Groq free-tier key for the cloud LLM tier (Streamlit Cloud has no
+    Ollama). Env var first, then Streamlit secrets; None disables the tier."""
+    key = os.environ.get("GROQ_API_KEY")
+    if key:
+        return key
+    try:
+        return st.secrets["GROQ_API_KEY"]
+    except (KeyError, FileNotFoundError):
+        return None
+
+
+GROQ_API_KEY = _get_groq_api_key()
+
+_PROVIDER_LABEL = {
+    "ollama": "🦙 Ollama 로컬 LLM",
+    "groq": "☁️ Groq LLM API",
+    "keyword": "🔤 키워드 휴리스틱 (LLM 미사용)",
+    "itunes": "🔎 iTunes 무드 검색 (LLM 미사용)",
+}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_real_tracks(mood: str, user_text: str, keywords: tuple[str, ...]):
+    return recommend_real_tracks(
+        mood, user_text=user_text, search_keywords=list(keywords) or None,
+        k=5, groq_api_key=GROQ_API_KEY,
+    )
+
+
+def _render_real_tracks(mood: str, user_text: str = "", keywords: list[str] | None = None) -> None:
+    """'실제 음원 Top-5' — LLM 추천 곡을 iTunes 카탈로그로 검증해 보여주고,
+    각 서비스의 검색/곡 페이지 링크만 제공한다(직접 재생 없음 — 저작권 안전)."""
+    st.subheader(f"🌐 '{mood}' 무드의 실제 음원 Top-5")
+    with st.spinner("실제 발매 음원 검색 중... (LLM 추천 + iTunes 검증)"):
+        try:
+            real_tracks, provider = _cached_real_tracks(mood, user_text, tuple(keywords or []))
+        except Exception:
+            real_tracks, provider = [], "itunes"
+    if not real_tracks:
+        st.info("외부 음원 검색에 실패했습니다 (네트워크 확인). 라이브러리 추천은 위에서 계속 사용할 수 있습니다.")
+        return
+    st.caption(f"추천 경로: {_PROVIDER_LABEL.get(provider, provider)} · 곡 존재 여부는 iTunes 카탈로그로 검증됨")
+    for rt in real_tracks:
+        with st.container(border=True):
+            col_art, col_info, col_links = st.columns([1, 3, 2])
+            if rt.artwork_url:
+                col_art.image(rt.artwork_url, width=80)
+            col_info.markdown(f"**{rt.title}**  \n{rt.artist}")
+            if rt.album or rt.genre:
+                col_info.caption(" · ".join(x for x in [rt.album, rt.genre] if x))
+            col_links.markdown(
+                "  \n".join(f"[{name}]({url})" for name, url in rt.links.items())
+            )
+
+
 def _render_mood_probs(probs: np.ndarray) -> str:
     top_mood = tags[int(probs.argmax())]
     st.metric("최상위 무드", f"{_MOOD_EMOJI.get(top_mood, '')} {top_mood}", f"{probs.max():.1%}")
@@ -478,12 +869,15 @@ with tab_predict:
 
             with col_out:
                 st.subheader("예측 무드")
-                _render_mood_probs(probs)
+                top_mood = _render_mood_probs(probs)
 
                 st.divider()
                 st.subheader("비슷한 무드의 곡 Top-5")
                 idxs, sims = top_k_similar(selected, embeddings, k=5)
                 _render_recommendations(idxs, sims)
+
+                st.divider()
+                _render_real_tracks(top_mood)
 
     elif input_mode == "🎤 오디오 업로드":
         st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 라이브러리에서 비슷한 곡 5개를 추천받습니다.")
@@ -521,14 +915,21 @@ with tab_predict:
             col_in, col_out = st.columns([1, 2])
             with col_in:
                 st.subheader("예측 무드")
-                _render_mood_probs(probs)
+                top_mood = _render_mood_probs(probs)
             with col_out:
                 st.subheader("비슷한 무드의 곡 Top-5")
                 idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
                 _render_recommendations(idxs, sims)
 
+                st.divider()
+                _render_real_tracks(top_mood)
+
     else:
-        st.caption("지금 기분이나 원하는 분위기를 문장으로 입력하면, 가장 가까운 무드를 추정해 그 무드에 맞는 곡을 추천합니다.")
+        st.caption(
+            "지금 기분이나 원하는 분위기를 문장으로 입력하면 LLM이 무드를 분석해 "
+            "라이브러리 곡과 실제 발매 음원을 함께 추천합니다. "
+            "(Ollama 로컬 → Groq API → 키워드 휴리스틱 순 자동 폴백)"
+        )
         text_input = st.text_input("지금 기분이 어떤가요?", placeholder="예: 오늘 너무 우울하고 힘들어서 위로받을 음악 듣고 싶어")
         text_clicked = st.button("무드 찾기", use_container_width=True)
 
@@ -536,19 +937,27 @@ with tab_predict:
             if not text_input.strip():
                 st.warning("문장을 입력해주세요.")
             else:
-                best_tag, keyword_hits = infer_mood_from_text(text_input, tags)
-                if best_tag is None:
-                    best_tag = tags[0]
+                with st.spinner("LLM이 무드를 분석하는 중..."):
+                    analysis = analyze_mood(text_input, tags, groq_api_key=GROQ_API_KEY)
+                best_tag = analysis.mood
 
-                st.success(f"추정된 무드: {_MOOD_EMOJI.get(best_tag, '')} **{best_tag}** (키워드 매칭 {keyword_hits[best_tag]}건)")
-                st.caption(f"태그별 키워드 매칭 수: {keyword_hits}")
+                st.success(
+                    f"추정된 무드: {_MOOD_EMOJI.get(best_tag, '')} **{best_tag}** "
+                    f"(확신도 {analysis.confidence:.0%})"
+                )
+                st.caption(f"분석 경로: {_PROVIDER_LABEL.get(analysis.provider, analysis.provider)}")
+                if analysis.reason:
+                    st.info(f"💡 {analysis.reason}")
 
                 track_probs = predict_mood_probs(model, embeddings)
                 tag_idx = tags.index(best_tag)
                 order = np.argsort(-track_probs[:, tag_idx])[:5]
                 sims = track_probs[order, tag_idx]
-                st.subheader(f"'{best_tag}' 무드에 가장 잘 맞는 곡 Top-5")
+                st.subheader(f"'{best_tag}' 무드에 가장 잘 맞는 곡 Top-5 (라이브러리)")
                 _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
+
+                st.divider()
+                _render_real_tracks(best_tag, user_text=text_input, keywords=analysis.search_keywords)
 
 with tab_compare:
     all_metrics = load_all_metrics()
@@ -593,9 +1002,13 @@ with tab_about:
         "분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천합니다. "
         "분류와 추천을 별도 파이프라인으로 이어붙이지 않고 하나의 모델로 증명하는 DL 포트폴리오 프로젝트입니다.\n\n"
         "라이브러리에 있는 곡을 고르는 것뿐 아니라, **직접 가진 오디오 파일을 업로드**해 동일한 모델로 무드를 예측하거나, "
-        "**지금 기분을 문장으로 입력**해 그 무드에 맞는 곡을 찾을 수도 있습니다(🔍 예측 탭 상단의 입력 방식 선택)."
+        "**지금 기분을 문장으로 입력**해 그 무드에 맞는 곡을 찾을 수도 있습니다(🔍 예측 탭 상단의 입력 방식 선택).\n\n"
+        "**LLM 확장**: 텍스트 입력은 LLM(Ollama 로컬 → Groq API → 키워드 휴리스틱 폴백)이 무드를 분석하고, "
+        "모든 추천 결과에는 LLM이 제안하고 iTunes 카탈로그로 실존을 검증한 **실제 발매 음원 Top-5**가 "
+        "Spotify · YouTube Music · Apple Music 링크와 함께 표시됩니다(직접 재생 없음 — 저작권 안전)."
     )
-    stat_cols = st.columns(3)
+    stat_cols = st.columns(4)
     stat_cols[0].metric("데이터", "MTG-Jamendo")
     stat_cols[1].metric("모델", "MoodCNN")
     stat_cols[2].metric("추천", "임베딩 코사인 유사도")
+    stat_cols[3].metric("LLM", "Ollama · Groq")

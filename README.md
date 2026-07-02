@@ -1,6 +1,6 @@
 # music-mood-recs
 
-MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스펙트로그램 입력)으로 5개 무드 태그(happy/energetic/relaxing/film/dark)를 분류하고, 분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천한다. 머신러닝 수업 과제로 시작한 프로젝트이며, Streamlit Cloud에 배포되어 있다.
+MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스펙트로그램 입력)으로 5개 무드 태그(happy/energetic/relaxing/film/dark)를 분류하고, 분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천한다. **LLM 확장**으로 자연어 무드 분석(Ollama → Groq → 키워드 휴리스틱 폴백)과 실제 발매 음원 Top-5 추천(iTunes 검증 + Spotify·YouTube Music·Apple Music 링크)을 지원한다. 머신러닝 수업 과제로 시작한 프로젝트이며, Streamlit Cloud에 배포되어 있다.
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://music-mood-recs.streamlit.app)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)
@@ -83,12 +83,13 @@ MTG-Jamendo 메타데이터
 | 임베딩 재사용 코사인 유사도 추천 | ✅ | `src/recommend/`, `scripts/precompute_embeddings.py`로 사전계산 |
 | 라이브러리 곡 선택 → 무드 예측 → 추천 5곡 + 오디오 재생 | ✅ | "🔍 예측" 탭 → 입력 방식 "📂 라이브러리 곡 선택", `st.audio` |
 | **내 오디오 파일 업로드 → 무드 예측 → 추천 5곡** | ✅ | "🔍 예측" 탭 → 입력 방식 "🎤 오디오 업로드" — 업로드 파일을 같은 모델로 멜스펙 추출 + 추론(`src/preprocessing/melspec.py:extract_melspec`), 임베딩을 라이브러리 임베딩과 코사인 유사도 비교(`top_k_similar_to_vector`) |
-| **텍스트로 기분 입력 → 무드 추정 → 추천 5곡** | ✅ | "🔍 예측" 탭 → 입력 방식 "💬 텍스트로 찾기" — 한국어 키워드 매칭으로 5개 태그 중 추정(`infer_mood_from_text`), 추정 무드에 대한 분류기 확률 상위 5곡 추천(`predict_mood_probs`) |
+| **텍스트로 기분 입력 → LLM 무드 분석 → 추천 5곡** | ✅ | "🔍 예측" 탭 → 입력 방식 "💬 텍스트로 찾기" — LLM 3단 폴백 체인(Ollama 로컬 → Groq 무료 API → 키워드 휴리스틱)으로 무드 추론(`src/llm/mood_analyzer.py:analyze_mood`), 추정 무드에 대한 분류기 확률 상위 5곡 추천(`predict_mood_probs`) |
+| **실제 발매 음원 Top-5 (LLM + iTunes 검증)** | ✅ | 예측 탭 3개 입력 모드 전부 — LLM이 무드에 맞는 실존 곡을 제안하면 iTunes Search API로 검증(환각 차단), Spotify·YouTube Music·Apple Music **검색 링크만** 제공(직접 재생 없음 — 저작권 안전). `src/llm/music_search.py:recommend_real_tracks` |
 | EDA (태그 분포·재생시간 분포·멜스펙 예시) | ✅ | 앱 "데이터 탐색(EDA)" 탭, `scripts/compute_eda.py`로 사전계산 |
 | 클라우드 메모리 최적화 | ✅ | 임베딩 사전계산(`artifacts/embeddings.npy`) + 멜스펙 지연 로딩 (무료 티어 1GB OOM 방지) |
 | Streamlit Cloud 배포 | ✅ | Python 3.11 고정 필요 (아래 "배포" 참고) |
 
-> 텍스트 무드 추정은 별도로 학습된 NLP 모델이 아니라, 한국어 감정 키워드를 5개 무드 태그에 매핑하는 휴리스틱이다. 프로젝트가 학습한 모델은 오디오 분류기 하나뿐이며, 텍스트 입력은 그 모델이 이미 만들어 둔 무드 확률(`predict_mood_probs`)을 사용자가 더 쉽게 트리거하는 다리 역할을 한다.
+> 텍스트 무드 추정은 LLM이 담당한다(별도 NLP 모델 학습 없음): Ollama 로컬 LLM을 우선 시도하고, 없으면 Groq 무료 API(`GROQ_API_KEY` env/secrets), 그것도 없으면 기존 한국어 키워드 휴리스틱으로 폴백한다. 어느 경로든 결과는 같은 5개 학습 태그로 매핑되어 오디오 분류기의 무드 확률(`predict_mood_probs`)로 곡을 고르므로, DL 파이프라인은 그대로다. LLM 모듈은 태그 목록만 입력받아 데이터셋 규모(50/100 TAR)와 무관하게 동작한다.
 
 > 모델 성능 수치는 [모델 성능](#모델-성능) 참고.
 
@@ -109,6 +110,7 @@ src/
   models/                    MoodCNN 정의 + 추론 래퍼
   evaluation/metrics.py      F1(micro/macro)/Accuracy/ROC-AUC 계산
   recommend/                 임베딩 코사인 유사도 Top-5 추천
+  llm/                       LLM 확장 — mood_analyzer.py(자연어 무드 분석, 3단 폴백) + music_search.py(실음원 Top-5, iTunes 검증)
 
 scripts/                     학습/전처리/배포 CLI 진입점
   download_audio.py / extract_melspecs.py / train_cnn.py
@@ -123,6 +125,7 @@ docs/
   STATUS.md                  인프라/진행상황/다음작업 작업 로그
   prd.md                     제품 요구사항 (Phase 0: 무드 분류 + 콘텐츠 기반 추천)
   prd-phase-1-streaming-integration.md   Phase 1(외부 스트리밍 연동) — Draft
+  prd-phase-2-llm-extension.md           Phase 2(LLM 확장: 자연어 무드 분석 + 실음원 추천) — Active
 ```
 
 ## 로컬 환경 셋업
@@ -173,7 +176,8 @@ python -m pytest tests/ -v
 2. [share.streamlit.io](https://share.streamlit.io)에서 레포 연결, entry point = `app.py`
 3. `packages.txt`로 필요 apt 패키지 자동 설치됨
 4. Python 버전은 `runtime.txt`(3.11) 기준, 확실한 적용은 앱 대시보드 **⋮ → Settings → Python version**에서 재확인할 것
-5. 로컬 fallback이 필요하면 `streamlit run app.py`로 실행한다
+5. **LLM 경로 활성화(선택)**: 앱 대시보드 **⋮ → Settings → Secrets**에 `GROQ_API_KEY = "..."` 등록(Streamlit Cloud에는 Ollama가 없어 Groq이 클라우드 LLM 경로). 미등록 시 텍스트 무드 분석은 키워드 휴리스틱, 실음원 추천은 iTunes 무드 검색으로 폴백되어 앱은 정상 동작한다
+6. 로컬 fallback이 필요하면 `streamlit run app.py`로 실행한다 (로컬에서는 Ollama가 떠 있으면 자동 사용: `ollama pull gemma3:4b`)
 
 ## 라이선스
 

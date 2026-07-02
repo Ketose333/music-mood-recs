@@ -11,7 +11,7 @@
 | 학습 환경 | CPU(로컬, torch CPU 빌드) — GPU 없음 |
 | 원천 후보 | `../ai-service-blueprints/_workspace-docs/topic-brainstorming.md` `T-026` |
 | Phase | `0`(MVP, 본 문서) |
-| 관련 문서 | [`docs/prd-phase-1-streaming-integration.md`](prd-phase-1-streaming-integration.md)(Phase 1, 외부 스트리밍 연동) |
+| 관련 문서 | [`docs/prd-phase-1-streaming-integration.md`](prd-phase-1-streaming-integration.md)(Phase 1, 외부 스트리밍 연동 — Draft) · [`docs/prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md)(Phase 2, LLM 확장 — Active) |
 
 ### 변경 이력
 
