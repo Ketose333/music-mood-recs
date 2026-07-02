@@ -27,6 +27,7 @@
   - `src/llm/music_search.py`: **실제 발매 음원 Top-5** — LLM이 무드에 맞는 실존 곡을 제안하면 iTunes Search API(무료·키 불필요)로 검증(환각 차단), Spotify·YouTube Music·Apple Music **검색 링크만** 제공(직접 재생 없음 — 저작권 안전). LLM 불가 시 무드 키워드 iTunes 검색 폴백.
   - `app.py`: 예측 탭 3개 입력 모드 전부에 "🌐 실제 음원 Top-5" 섹션 추가(1시간 `st.cache_data` 캐시), 텍스트 모드는 LLM 분석 경로·근거·확신도 표시. AUTO-SYNC BLOCKS에 `src/llm/` 2개 모듈 추가, `make_notebook.py`에 §9 LLM 확장 섹션(모듈 인라인 + 데모 셀) 추가 — 제출 구조(단일 py/ipynb) 그대로 유지.
   - 두 모듈 모두 태그 목록만 입력받으므로 **데이터셋 규모(50/100 TAR)와 무관**하게 동작.
+- **제출 노트북 슬림화(2026-07-02)** — 채점 PC에서 불필요/위험한 부분 제거: `hf_sync.py` 인라인 + `upload_missing_files`(멜스펙)·`upload_file`(embeddings) 호출 삭제(쓰기 토큰 없는 PC에서 embeddings 업로드가 실패하던 잠재 버그이기도 함), 중복 개요 md 병합, 누락 경고 축소. 오디오 다운로드의 `hf_repo_id`는 **읽기 전용 백필**(TAR 재다운로드 회피)이라 유지 — 새 PC에서도 공개 레포라 토큰 없이 동작. **주의: 이제 노트북 재실행은 HF Hub에 업로드하지 않음** — TAR 수 확장 시 `scripts/extract_melspecs.py --hf-repo-id` / `scripts/precompute_embeddings.py --hf-repo-id`로 업로드할 것(오디오는 `scripts/download_audio.py --hf-repo-id`).
   - 테스트: 신규 `tests/test_mood_analyzer.py`(13) + `tests/test_music_search.py`(12) 포함 **전체 54건 통과**(기존 29건 회귀 없음). LLM/HTTP는 전부 모킹 — 오프라인에서도 테스트 가능.
 - Streamlit Cloud 시연 준비: 앱 대시보드 Secrets에 `GROQ_API_KEY` 등록 필요(미등록 시 텍스트 분석은 키워드 휴리스틱, 실음원은 iTunes 무드 검색으로 폴백 — 크래시 없음).
 
