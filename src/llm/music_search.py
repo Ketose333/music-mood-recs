@@ -53,6 +53,39 @@ class RealTrack:
     artwork_url: str = ""
     genre: str = ""
     links: dict[str, str] = field(default_factory=dict)
+    reason: str = ""
+
+
+# Per-country filter config: iTunes primaryGenreName values that mark a track
+# as belonging to that country, plus a script check on title/artist as a
+# second signal (some K-pop/J-pop tracks are tagged under a generic
+# "Pop"/"Hip-Hop/Rap" genre instead of the country-specific one). Adding a
+# country only needs a new entry here — everything else keys off this dict.
+_COUNTRY_FILTERS: dict[str, dict] = {
+    "KR": {
+        "prompt_label": "한국 국내 가수(K-pop/국내 발매곡)",
+        "genres": {"K-Pop", "Korean Pop", "Trot", "Korean Hip-Hop", "Korean R&B/Soul"},
+        "script_re": re.compile(r"[가-힣]"),
+        "search_suffix": "케이팝",
+    },
+    "JP": {
+        "prompt_label": "일본 가수(J-pop/국내 발매곡)",
+        "genres": {"J-Pop", "J-Rock", "Anime", "Japanese Pop"},
+        "script_re": re.compile(r"[぀-ヿ]"),  # Hiragana + Katakana
+        "search_suffix": "제이팝",
+    },
+}
+
+
+def matches_country(track: "RealTrack", country: str) -> bool:
+    """Heuristic: country-specific genre tag, or that country's script in the
+    title/artist. ``country`` is a key of ``_COUNTRY_FILTERS`` (e.g. "KR")."""
+    cfg = _COUNTRY_FILTERS.get(country)
+    if cfg is None:
+        return True
+    if track.genre in cfg["genres"]:
+        return True
+    return bool(cfg["script_re"].search(track.title) or cfg["script_re"].search(track.artist))
 
 
 def service_links(title: str, artist: str, itunes_url: str = "") -> dict[str, str]:
@@ -103,21 +136,37 @@ def verify_track(title: str, artist: str, country: str = "KR") -> RealTrack | No
     return results[0] if results else None
 
 
-def build_song_prompt(mood: str, user_text: str, k: int) -> str:
+def build_song_prompt(
+    mood: str, user_text: str, k: int, artist_country: str | None = None,
+    exclude: list[tuple[str, str]] | None = None,
+) -> str:
     context = f"\n사용자의 원래 문장(분위기 참고): {user_text}" if user_text else ""
+    country_rule = ""
+    if artist_country and artist_country in _COUNTRY_FILTERS:
+        label = _COUNTRY_FILTERS[artist_country]["prompt_label"]
+        country_rule = f"\n- 반드시 {label}만 추천하세요. 다른 국가 아티스트는 제외."
+    # LLM은 같은 프롬프트에 매번 가장 유명한 곡부터 답하는 경향이 있어, "다른 곡"
+    # 재시도가 그냥 같은 Top-5를 반복하는 문제가 있었다. 이전에 이미 보여준 곡을
+    # 명시적으로 제외 목록에 넣어야 실제로 다른 곡이 나온다.
+    exclude_rule = ""
+    if exclude:
+        exclude_list = ", ".join(f"{t} - {a}" for t, a in exclude)
+        exclude_rule = f"\n- 다음 곡은 이미 추천했으니 절대 다시 추천하지 마세요: {exclude_list}"
     return (
         f"'{mood}' 무드에 어울리는, 실제로 발매된 유명한 곡을 {k + 3}개 추천하세요."
         f"{context}\n\n"
         "규칙:\n"
-        "- 실존하는 곡만. 확실하지 않은 곡은 넣지 마세요.\n"
+        "- 실존하는 곡만. 확실하지 않은 곡은 넣지 마세요."
+        f"{country_rule}{exclude_rule}\n"
         "- 반드시 JSON 객체 하나만 출력: "
-        '{"songs": [{"title": "<곡명>", "artist": "<아티스트>"}, ...]}\n'
+        '{"songs": [{"title": "<곡명>", "artist": "<아티스트>", '
+        '"reason": "<이 곡이 왜 이 무드와 어울리는지 한국어 1문장. 가사·줄거리 등 사실 주장 금지, 분위기/장르 톤만 언급>"}, ...]}\n'
         "- 다양한 아티스트로 구성하세요 (한 아티스트 최대 1곡)."
     )
 
 
-def parse_song_response(raw: str) -> list[tuple[str, str]]:
-    """Extract (title, artist) pairs from the LLM reply; [] when unparseable."""
+def parse_song_response(raw: str) -> list[tuple[str, str, str]]:
+    """Extract (title, artist, reason) triples from the LLM reply; [] when unparseable."""
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
         return []
@@ -125,15 +174,16 @@ def parse_song_response(raw: str) -> list[tuple[str, str]]:
         data = json.loads(match.group(0))
     except json.JSONDecodeError:
         return []
-    pairs: list[tuple[str, str]] = []
+    triples: list[tuple[str, str, str]] = []
     for song in data.get("songs", []) if isinstance(data, dict) else []:
         if not isinstance(song, dict):
             continue
         title = str(song.get("title", "")).strip()
         artist = str(song.get("artist", "")).strip()
+        reason = str(song.get("reason", "")).strip()
         if title and artist:
-            pairs.append((title, artist))
-    return pairs
+            triples.append((title, artist, reason))
+    return triples
 
 
 def recommend_real_tracks(
@@ -143,29 +193,46 @@ def recommend_real_tracks(
     k: int = 5,
     groq_api_key: str | None = None,
     country: str = "KR",
+    artist_country: str | None = None,
+    exclude: list[tuple[str, str]] | None = None,
 ) -> tuple[list[RealTrack], str]:
     """Top-k released tracks for ``mood``; returns (tracks, provider).
 
     provider: "ollama"/"groq" when LLM candidates (iTunes-verified) were used,
     "itunes" when only the keyword search produced results. LLM candidates are
     verified one by one and topped up from keyword search if too few survive.
+    ``artist_country`` (a key of ``_COUNTRY_FILTERS``, e.g. "KR"/"JP") drops
+    candidates that don't match from both sources (see ``matches_country``)
+    rather than relaxing the filter to hit ``k`` — fewer, correctly-filtered
+    results beat a wrong-country song slipping in. ``country`` is unrelated:
+    it's just the iTunes storefront region used to verify/search tracks.
+    ``exclude``: (title, artist) pairs already shown to the user (e.g. from a
+    previous "다른 곡" reroll) — the LLM is told to avoid them and they are
+    filtered out of both sources, so rerolling actually returns new songs
+    instead of the same well-known picks the LLM tends to default to.
     """
     tracks: list[RealTrack] = []
     provider = "itunes"
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str]] = {(t.lower(), a.lower()) for t, a in (exclude or [])}
 
-    chat = llm_chat(build_song_prompt(mood, user_text, k), groq_api_key=groq_api_key)
+    chat = llm_chat(
+        build_song_prompt(mood, user_text, k, artist_country=artist_country, exclude=exclude),
+        groq_api_key=groq_api_key,
+    )
     if chat is not None:
         raw, llm_provider = chat
-        for title, artist in parse_song_response(raw):
+        for title, artist, reason in parse_song_response(raw):
             if len(tracks) >= k:
                 break
             found = verify_track(title, artist, country=country)
             if found is None:
                 continue
+            if artist_country and not matches_country(found, artist_country):
+                continue
             key = (found.title.lower(), found.artist.lower())
             if key in seen:
                 continue
+            found.reason = reason or f"'{mood}' 무드와 어울리는 곡으로 LLM이 추천했습니다."
             seen.add(key)
             tracks.append(found)
         if tracks:
@@ -176,10 +243,14 @@ def recommend_real_tracks(
             term = " ".join(search_keywords)
         else:
             term = random.choice(MOOD_SEARCH_TERMS.get(mood, [f"{mood} music"]))
+        if artist_country and artist_country in _COUNTRY_FILTERS:
+            term = f"{term} {_COUNTRY_FILTERS[artist_country]['search_suffix']}"
         try:
             candidates = itunes_search(term, limit=max(k * 3, 25), country=country)
         except requests.RequestException:
             candidates = []
+        if artist_country:
+            candidates = [c for c in candidates if matches_country(c, artist_country)]
         # iTunes returns the same ordering for the same query every time, so
         # without shuffling the fallback would recommend the exact same songs
         # on every call for a given mood. Shuffle first, then fill with unique
@@ -197,6 +268,7 @@ def recommend_real_tracks(
                     t.artist.lower() == found.artist.lower() for t in tracks
                 ):
                     continue
+                found.reason = f"'{mood}' 무드 검색으로 찾은 {found.genre or '추천'} 곡입니다."
                 seen.add(key)
                 tracks.append(found)
 

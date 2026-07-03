@@ -26,12 +26,12 @@ class TestServiceLinks:
 
 class TestParseSongResponse:
     def test_valid_songs(self):
-        raw = '{"songs": [{"title": "A", "artist": "B"}, {"title": "C", "artist": "D"}]}'
-        assert ms.parse_song_response(raw) == [("A", "B"), ("C", "D")]
+        raw = '{"songs": [{"title": "A", "artist": "B"}, {"title": "C", "artist": "D", "reason": "chill"}]}'
+        assert ms.parse_song_response(raw) == [("A", "B", ""), ("C", "D", "chill")]
 
     def test_skips_incomplete_entries(self):
         raw = '{"songs": [{"title": "A"}, {"artist": "B"}, {"title": "C", "artist": "D"}]}'
-        assert ms.parse_song_response(raw) == [("C", "D")]
+        assert ms.parse_song_response(raw) == [("C", "D", "")]
 
     def test_unparseable_returns_empty(self):
         assert ms.parse_song_response("no json here") == []
@@ -114,3 +114,137 @@ class TestRecommendRealTracks:
         monkeypatch.setattr(ms, "itunes_search", capture)
         ms.recommend_real_tracks("happy", search_keywords=["upbeat pop", "summer"], k=5)
         assert captured["term"] == "upbeat pop summer"
+
+    def test_reason_from_llm_is_attached(self, monkeypatch):
+        monkeypatch.setattr(
+            ms, "llm_chat",
+            lambda prompt, groq_api_key=None: (
+                '{"songs": [{"title": "Real", "artist": "One", "reason": "잔잔한 분위기"}]}', "ollama",
+            ),
+        )
+        monkeypatch.setattr(ms, "verify_track", lambda title, artist, country="KR": _track(title, artist))
+        monkeypatch.setattr(ms, "itunes_search", lambda term, limit=5, country="KR": [])
+        tracks, _ = ms.recommend_real_tracks("relaxing", k=5)
+        assert tracks[0].reason == "잔잔한 분위기"
+
+    def test_fallback_track_gets_generic_reason(self, monkeypatch):
+        monkeypatch.setattr(ms, "llm_chat", lambda prompt, groq_api_key=None: None)
+        monkeypatch.setattr(ms, "itunes_search", lambda term, limit=5, country="KR": [_track("S1", "A1")])
+        tracks, _ = ms.recommend_real_tracks("happy", k=5)
+        assert tracks[0].reason
+
+
+class TestExcludeReroll:
+    def test_excluded_llm_candidate_is_dropped(self, monkeypatch):
+        monkeypatch.setattr(
+            ms, "llm_chat",
+            lambda prompt, groq_api_key=None: (
+                '{"songs": [{"title": "Real", "artist": "One"}, {"title": "New", "artist": "Two"}]}', "ollama",
+            ),
+        )
+        monkeypatch.setattr(ms, "verify_track", lambda title, artist, country="KR": _track(title, artist))
+        monkeypatch.setattr(ms, "itunes_search", lambda term, limit=5, country="KR": [])
+        tracks, _ = ms.recommend_real_tracks("happy", k=5, exclude=[("Real", "One")])
+        assert [t.title for t in tracks] == ["New"]
+
+    def test_excluded_fallback_candidate_is_dropped(self, monkeypatch):
+        monkeypatch.setattr(ms, "llm_chat", lambda prompt, groq_api_key=None: None)
+        monkeypatch.setattr(
+            ms, "itunes_search",
+            lambda term, limit=5, country="KR": [_track("Seen", "A"), _track("Unseen", "B")],
+        )
+        tracks, _ = ms.recommend_real_tracks("happy", k=5, exclude=[("Seen", "A")])
+        assert [t.title for t in tracks] == ["Unseen"]
+
+    def test_prompt_lists_excluded_songs(self):
+        prompt = ms.build_song_prompt("happy", "", 5, exclude=[("Real", "One")])
+        assert "Real - One" in prompt
+
+    def test_prompt_omits_exclude_rule_when_empty(self):
+        prompt = ms.build_song_prompt("happy", "", 5)
+        assert "이미 추천했으니" not in prompt
+
+
+class TestCountryFilter:
+    def test_matches_country_by_genre(self):
+        t = ms.RealTrack(title="Song", artist="Artist", genre="K-Pop")
+        assert ms.matches_country(t, "KR")
+
+    def test_matches_country_by_hangul(self):
+        t = ms.RealTrack(title="좋은 날", artist="IU")
+        assert ms.matches_country(t, "KR")
+
+    def test_matches_country_false_for_foreign(self):
+        t = ms.RealTrack(title="Blinding Lights", artist="The Weeknd", genre="Pop")
+        assert not ms.matches_country(t, "KR")
+
+    def test_matches_country_japanese_by_genre(self):
+        t = ms.RealTrack(title="Song", artist="Artist", genre="J-Pop")
+        assert ms.matches_country(t, "JP")
+
+    def test_matches_country_japanese_by_script(self):
+        t = ms.RealTrack(title="さくら", artist="いきものがかり")
+        assert ms.matches_country(t, "JP")
+
+    def test_matches_country_korean_track_not_japanese(self):
+        t = ms.RealTrack(title="좋은 날", artist="IU", genre="K-Pop")
+        assert not ms.matches_country(t, "JP")
+
+    def test_prompt_includes_country_rule_when_enabled(self):
+        prompt = ms.build_song_prompt("happy", "", 5, artist_country="KR")
+        assert "한국 국내 가수" in prompt
+
+    def test_prompt_includes_japan_rule(self):
+        prompt = ms.build_song_prompt("happy", "", 5, artist_country="JP")
+        assert "일본 가수" in prompt
+
+    def test_prompt_omits_country_rule_by_default(self):
+        prompt = ms.build_song_prompt("happy", "", 5)
+        assert "한국 국내 가수" not in prompt and "일본 가수" not in prompt
+
+    def test_recommend_filters_out_non_domestic_llm_candidates(self, monkeypatch):
+        monkeypatch.setattr(
+            ms, "llm_chat",
+            lambda prompt, groq_api_key=None: (
+                '{"songs": [{"title": "Blinding Lights", "artist": "The Weeknd"}, '
+                '{"title": "좋은 날", "artist": "IU"}]}', "ollama",
+            ),
+        )
+
+        def fake_verify(title, artist, country="KR"):
+            genre = "Pop" if artist == "The Weeknd" else "K-Pop"
+            return ms.RealTrack(title=title, artist=artist, genre=genre)
+
+        monkeypatch.setattr(ms, "verify_track", fake_verify)
+        monkeypatch.setattr(ms, "itunes_search", lambda term, limit=5, country="KR": [])
+        tracks, _ = ms.recommend_real_tracks("happy", k=5, artist_country="KR")
+        assert [t.artist for t in tracks] == ["IU"]
+
+    def test_recommend_filters_fallback_candidates_and_biases_term(self, monkeypatch):
+        monkeypatch.setattr(ms, "llm_chat", lambda prompt, groq_api_key=None: None)
+        captured = {}
+
+        def fake_search(term, limit=5, country="KR"):
+            captured["term"] = term
+            return [
+                ms.RealTrack(title="Foreign", artist="Bar", genre="Pop"),
+                ms.RealTrack(title="좋은 날", artist="IU", genre="K-Pop"),
+            ]
+
+        monkeypatch.setattr(ms, "itunes_search", fake_search)
+        tracks, _ = ms.recommend_real_tracks("happy", k=5, artist_country="KR")
+        assert "케이팝" in captured["term"]
+        assert [t.artist for t in tracks] == ["IU"]
+
+    def test_recommend_biases_term_for_japan(self, monkeypatch):
+        monkeypatch.setattr(ms, "llm_chat", lambda prompt, groq_api_key=None: None)
+        captured = {}
+
+        def fake_search(term, limit=5, country="KR"):
+            captured["term"] = term
+            return [ms.RealTrack(title="さくら", artist="いきものがかり", genre="J-Pop")]
+
+        monkeypatch.setattr(ms, "itunes_search", fake_search)
+        tracks, _ = ms.recommend_real_tracks("happy", k=5, artist_country="JP")
+        assert "제이팝" in captured["term"]
+        assert [t.artist for t in tracks] == ["いきものがかり"]
