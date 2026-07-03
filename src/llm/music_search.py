@@ -54,6 +54,10 @@ class RealTrack:
     genre: str = ""
     links: dict[str, str] = field(default_factory=dict)
     reason: str = ""
+    # Apple's official 30s preview clip URL — consumed by
+    # src/recommend/preview_rank.py for CNN-embedding re-ranking only,
+    # never stored or played in the app.
+    preview_url: str = ""
 
 
 # Per-country filter config: iTunes primaryGenreName values that mark a track
@@ -109,6 +113,7 @@ def _to_real_track(item: dict) -> RealTrack:
         artwork_url=item.get("artworkUrl100", ""),
         genre=item.get("primaryGenreName", ""),
         links=service_links(title, artist, item.get("trackViewUrl", "")),
+        preview_url=item.get("previewUrl", ""),
     )
 
 
