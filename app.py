@@ -481,6 +481,10 @@ class RealTrack:
     genre: str = ""
     links: dict[str, str] = field(default_factory=dict)
     reason: str = ""
+    # Apple's official 30s preview clip URL — consumed by
+    # src/recommend/preview_rank.py for CNN-embedding re-ranking only,
+    # never stored or played in the app.
+    preview_url: str = ""
 
 
 _COUNTRY_FILTERS: dict[str, dict] = {
@@ -531,6 +535,7 @@ def _to_real_track(item: dict) -> RealTrack:
         artwork_url=item.get("artworkUrl100", ""),
         genre=item.get("primaryGenreName", ""),
         links=service_links(title, artist, item.get("trackViewUrl", "")),
+        preview_url=item.get("previewUrl", ""),
     )
 
 
@@ -698,6 +703,143 @@ def recommend_real_tracks(
 # <<< AUTO-SYNCED <<<
 
 
+# >>> AUTO-SYNCED from src/recommend/preview_rank.py (run scripts/sync_standalone_app.py) >>>
+import os
+import subprocess
+import tempfile
+import urllib.parse
+from typing import TypeVar
+import numpy as np
+import requests
+import torch
+from sklearn.metrics.pairwise import cosine_similarity
+
+
+PREVIEW_TIMEOUT = 15
+
+
+FFMPEG_TIMEOUT = 60
+
+
+T = TypeVar("T")
+
+
+def _decode_with_ffmpeg(src_path: str) -> str | None:
+    """Transcode an audio file to a temp wav; returns the wav path or None.
+
+    iTunes previews are AAC/m4a, which neither libsndfile nor audioread can
+    decode without a system ffmpeg. imageio-ffmpeg ships a static ffmpeg
+    binary through pip (no apt/brew needed — works on Streamlit Cloud and
+    local Windows alike), so we shell out to it only when librosa's own
+    loaders have already failed. The caller deletes the returned wav.
+    """
+    try:
+        from imageio_ffmpeg import get_ffmpeg_exe
+
+        ffmpeg = get_ffmpeg_exe()
+    except Exception:
+        return None
+    wav_fd, wav_path = tempfile.mkstemp(suffix=".wav")
+    os.close(wav_fd)
+    try:
+        subprocess.run(
+            [ffmpeg, "-y", "-v", "error", "-i", src_path, "-ac", "1", "-ar", "22050", wav_path],
+            check=True,
+            capture_output=True,
+            timeout=FFMPEG_TIMEOUT,
+        )
+    except Exception:
+        os.remove(wav_path)
+        return None
+    return wav_path
+
+
+def melspec_from_preview(preview_url: str, n_mels: int = 128) -> np.ndarray | None:
+    """Download one iTunes preview clip and return its log-mel spectrogram
+    (the same array shape ``extract_melspec`` produces for a library track),
+    or None on any failure (no URL, network error, undecodable audio).
+
+    Split out from ``embed_preview`` so callers that also need the trained
+    classifier's mood probabilities (not just the embedding) — e.g. the
+    "search a released song" input mode — can run one download+decode and
+    feed the resulting mel into ``model.embed``/``model.classifier`` both,
+    exactly like ``app.py``'s uploaded-audio path already does.
+    """
+    if not preview_url:
+        return None
+    try:
+        resp = requests.get(preview_url, timeout=PREVIEW_TIMEOUT)
+        resp.raise_for_status()
+    except requests.RequestException:
+        return None
+    suffix = os.path.splitext(urllib.parse.urlparse(preview_url).path)[1] or ".m4a"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(resp.content)
+        tmp_path = tmp.name
+    try:
+        try:
+            return extract_melspec(tmp_path, MelspecConfig(n_mels=n_mels))
+        except Exception:
+            # librosa can't decode AAC/m4a directly — transcode via the
+            # pip-bundled ffmpeg and retry once; still failing → give up.
+            wav_path = _decode_with_ffmpeg(tmp_path)
+            if wav_path is None:
+                return None
+            try:
+                return extract_melspec(wav_path, MelspecConfig(n_mels=n_mels))
+            except Exception:
+                return None
+            finally:
+                os.remove(wav_path)
+    finally:
+        os.remove(tmp_path)
+
+
+@torch.no_grad()
+def embed_preview(preview_url: str, model: MoodCNN, n_mels: int = 128) -> np.ndarray | None:
+    """Download one preview clip and return its CNN embedding, or None.
+
+    The clip (~30s AAC/m4a) goes through the exact pipeline used for library
+    tracks (``extract_melspec`` pads/trims to the fixed 30s segment), so the
+    embedding lives in the same space as ``artifacts/embeddings.npy`` and is
+    directly comparable by cosine similarity.
+    """
+    mel = melspec_from_preview(preview_url, n_mels=n_mels)
+    if mel is None:
+        return None
+    model.eval()
+    x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
+    z = model.embed(x)
+    return z[0].numpy()
+
+
+def preview_similarities(
+    query_embedding: np.ndarray, preview_embeddings: list[np.ndarray | None]
+) -> list[float | None]:
+    """Cosine similarity of each preview embedding to the query embedding,
+    positionally aligned with the input; None entries stay None."""
+    query = np.asarray(query_embedding, dtype=np.float32).reshape(1, -1)
+    sims: list[float | None] = []
+    for emb in preview_embeddings:
+        if emb is None:
+            sims.append(None)
+            continue
+        vec = np.asarray(emb, dtype=np.float32).reshape(1, -1)
+        sims.append(float(cosine_similarity(query, vec)[0, 0]))
+    return sims
+
+
+def rerank_with_similarity(items: list[T], sims: list[float | None]) -> list[tuple[T, float | None]]:
+    """Sort ``items`` by similarity (desc). Unscored items (sim None) keep
+    their original relative order and follow the scored ones, so a missing
+    preview never buries a track the LLM ranked high on its own."""
+    scored = [(item, s) for item, s in zip(items, sims) if s is not None]
+    unscored = [(item, s) for item, s in zip(items, sims) if s is None]
+    scored.sort(key=lambda pair: -pair[1])
+    return scored + unscored
+# <<< AUTO-SYNCED <<<
+
+
 MODEL_DIR = os.environ.get("MMR_MODEL_DIR", "models/cnn")
 AUDIO_DIR = os.environ.get("MMR_AUDIO_DIR", "data/audio")
 MELSPEC_DIR = os.environ.get("MMR_MELSPEC_DIR", "artifacts/melspecs")
@@ -804,7 +946,6 @@ st.set_page_config(page_title="music-mood-recs", page_icon="🎵", layout="wide"
 
 with st.sidebar:
     st.title("🎵 음악 무드 분류 + 추천")
-    st.caption("MTG-Jamendo 무드/테마 서브셋 · CNN · 임베딩 코사인 유사도")
 
 try:
     model, tags, cfg = load_model_artifacts(MODEL_DIR)
@@ -828,22 +969,22 @@ with st.sidebar:
     st.divider()
     input_mode = st.selectbox(
         "입력 방식",
-        ["라이브러리 곡 선택", "오디오 업로드", "텍스트로 찾기"],
-        help="무드를 예측할 방법을 선택하세요.",
+        ["음원 검색", "오디오 업로드", "텍스트로 찾기", "라이브러리 곡 선택"],
+        help="무드를 예측할 방법을 선택하세요. '라이브러리 곡 선택'은 학습 데이터셋(DL 과제)에서 곡을 고르는 데모용입니다.",
     )
     rec_view = st.selectbox(
         "추천 결과 표시",
-        ["전체", "라이브러리만", "실제 음원만"],
-        help="실제 음원 추천은 외부 검색(LLM+iTunes)이 걸려 결과가 길어질 수 있습니다. 필요한 쪽만 골라 보세요.",
+        ["전체", "추천만", "라이브러리 데모만"],
+        help="추천은 외부 검색(LLM+iTunes)이 걸려 결과가 길어질 수 있습니다. 필요한 쪽만 골라 보세요.",
     )
-    show_library = rec_view != "실제 음원만"
-    show_real = rec_view != "라이브러리만"
+    show_library = rec_view != "추천만"
+    show_real = rec_view != "라이브러리 데모만"
     artist_country = None
     if show_real:
         country_choice = st.selectbox(
             "국가 선택",
             ["전체", "한국", "일본"],
-            help="실제 음원 Top-5를 특정 국가 가수(K-pop/J-pop 등 국내 발매곡)로 제한할지 선택하세요.",
+            help="추천 Top-5를 특정 국가 가수(K-pop/J-pop 등 국내 발매곡)로 제한할지 선택하세요.",
         )
         artist_country = {"한국": "KR", "일본": "JP"}.get(country_choice)
 
@@ -894,29 +1035,46 @@ def _cached_real_tracks(
     )
 
 
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=64)
+def _cached_preview_embedding(preview_url: str):
+    """iTunes 30초 프리뷰의 CNN 임베딩. URL 기준 캐시 — 같은 곡이 재정렬
+    대상에 다시 나타나도 프리뷰 다운로드+추론을 반복하지 않는다."""
+    return embed_preview(preview_url, model, n_mels=cfg.n_mels)
+
+
 def _render_real_tracks(
     mood: str, user_text: str = "", keywords: list[str] | None = None, artist_country: str | None = None,
+    query_embedding: np.ndarray | None = None, extra_exclude: tuple[tuple[str, str], ...] = (),
 ) -> None:
-    """'실제 음원 Top-5' — LLM 추천 곡을 iTunes 카탈로그로 검증해 보여주고,
-    각 서비스의 검색/곡 페이지 링크만 제공한다(직접 재생 없음 — 저작권 안전)."""
+    """'추천 Top-5' — LLM 추천 곡을 iTunes 카탈로그로 검증해 보여주고,
+    각 서비스의 검색/곡 페이지 링크만 제공한다(직접 재생 없음 — 저작권 안전).
+
+    ``query_embedding``이 있으면(음원 검색/업로드/라이브러리 모드 — 입력 오디오가
+    존재) 각 곡의 iTunes 공식 30초 프리뷰를 같은 CNN에 통과시켜 얻은 임베딩과의
+    코사인 유사도로 Top-5를 재정렬한다 — LLM이 후보를 내고 DL이 순위를 매기는
+    구조. 텍스트 모드는 비교할 입력 오디오가 없어 재정렬하지 않는다.
+    ``extra_exclude``는 처음부터 제외할 (제목, 아티스트) 목록 — 음원 검색
+    모드에서 검색한 곡 자신이 자기 추천 목록에 나오지 않도록 쓴다."""
     # 캐시 키에는 (무드, 문장, 검색어)만 들어가므로, 캐시가 살아있는 동안
     # (ttl=3600) 같은 입력으로 다시 눌러도 원래는 같은 결과가 나온다 — 다른
     # 위젯(표시 옵션 등)을 조작할 때마다 LLM+iTunes를 다시 호출하지 않기
     # 위해 캐싱은 유지하되, "다른 곡" 버튼을 누르면 세션별 재시도 횟수를
     # 캐시 키에 얹어 강제로 새 결과를 뽑는다.
-    reroll_key = f"real_tracks_reroll::{mood}::{user_text}::{tuple(keywords or [])}::{artist_country}"
+    reroll_key = f"real_tracks_reroll::{mood}::{user_text}::{tuple(keywords or [])}::{artist_country}::{extra_exclude}"
     seen_key = f"{reroll_key}::seen"
     reroll_n = st.session_state.get(reroll_key, 0)
     # LLM은 같은 프롬프트에 매번 가장 유명한 곡부터 답하는 경향이 있어, 캐시만
     # 무효화해서는 "다른 곡"이 여전히 같은 Top-5를 반복했다 — 지금까지 이
     # 무드/조건으로 보여준 모든 곡을 누적해 다음 호출에서 제외 목록으로 넘긴다.
-    already_shown: list[tuple[str, str]] = st.session_state.get(seen_key, [])
+    # extra_exclude는 seen_key가 없을 때(첫 렌더) 시드값으로만 쓰여 검색한
+    # 곡 자신을 처음부터 걸러낸다.
+    already_shown: list[tuple[str, str]] = st.session_state.get(seen_key, list(extra_exclude))
     col_title, col_reroll = st.columns([4, 1])
-    col_title.subheader(f"🌐 '{mood}' 무드의 실제 음원 Top-5")
+    col_title.subheader(f"🎧 '{mood}' 무드 추천 Top-5")
     if col_reroll.button("🔀 다른 곡", key=f"reroll_btn::{reroll_key}", help="같은 무드로 다른 추천을 다시 받습니다"):
         reroll_n += 1
         st.session_state[reroll_key] = reroll_n
-    with st.spinner("실제 발매 음원 검색 중... (LLM 추천 + iTunes 검증)"):
+    with st.spinner("추천 곡 찾는 중... (LLM 추천 + iTunes 검증)"):
         try:
             real_tracks, provider = _cached_real_tracks(
                 mood, user_text, tuple(keywords or []), reroll_n,
@@ -926,13 +1084,24 @@ def _render_real_tracks(
             real_tracks, provider = [], "itunes"
     if not real_tracks:
         msg = "선택한 국가 조건에 맞는 곡을 찾지 못했습니다. 필터를 해제하거나 다시 시도해보세요." if artist_country else (
-            "외부 음원 검색에 실패했습니다 (네트워크 확인). 라이브러리 추천은 위에서 계속 사용할 수 있습니다."
+            "추천 검색에 실패했습니다 (네트워크 확인). 라이브러리 데모는 아래에서 계속 사용할 수 있습니다."
         )
         st.info(msg)
         return
     st.session_state[seen_key] = already_shown + [(t.title, t.artist) for t in real_tracks]
-    st.caption(f"추천 경로: {_PROVIDER_LABEL.get(provider, provider)} · 곡 존재 여부는 iTunes 카탈로그로 검증됨")
-    for rt in real_tracks:
+    ranked: list[tuple] = [(rt, None) for rt in real_tracks]
+    reranked = False
+    if query_embedding is not None:
+        with st.spinner("CNN 임베딩으로 무드 유사도 계산 중... (iTunes 30초 프리뷰 분석)"):
+            preview_embs = [_cached_preview_embedding(rt.preview_url) for rt in real_tracks]
+        sims = preview_similarities(query_embedding, preview_embs)
+        ranked = rerank_with_similarity(real_tracks, sims)
+        reranked = any(s is not None for s in sims)
+    provider_note = f"추천 경로: {_PROVIDER_LABEL.get(provider, provider)} · 곡 존재 여부는 iTunes 카탈로그로 검증됨"
+    if reranked:
+        provider_note += " · 입력 곡과의 CNN 임베딩 유사도로 재정렬됨"
+    st.caption(provider_note)
+    for rt, sim in ranked:
         with st.container(border=True):
             col_art, col_info, col_links = st.columns([1, 3, 2])
             if rt.artwork_url:
@@ -940,11 +1109,29 @@ def _render_real_tracks(
             col_info.markdown(f"**{rt.title}**  \n{rt.artist}")
             if rt.album or rt.genre:
                 col_info.caption(" · ".join(x for x in [rt.album, rt.genre] if x))
+            if sim is not None:
+                col_info.caption(f"🎧 무드 유사도 {sim:.4f} — 입력 곡 임베딩 vs 이 곡의 30초 프리뷰 임베딩")
             if rt.reason:
                 col_info.caption(f"💡 {rt.reason}")
             col_links.markdown(
                 "  \n".join(f"[{name}]({url})" for name, url in rt.links.items())
             )
+
+
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=16)
+def _predict_from_preview(preview_url: str, n_mels: int):
+    """검색한 실제 음원의 (무드 확률, 임베딩)을 iTunes 30초 프리뷰로 계산한다.
+    업로드 모드(_predict_uploaded_audio)와 동일한 멜스펙 -> CNN 경로를
+    재사용한다 — 오디오 소스만 업로드 파일 대신 프리뷰 다운로드로 바뀐다.
+    프리뷰가 없거나 디코딩에 실패하면 None."""
+    mel = melspec_from_preview(preview_url, n_mels=n_mels)
+    if mel is None:
+        return None
+    x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
+    with torch.no_grad():
+        z = model.embed(x)
+        probs = torch.sigmoid(model.classifier(z))[0].numpy()
+    return probs, z[0].numpy()
 
 
 @st.cache_data(max_entries=4, show_spinner=False)
@@ -979,50 +1166,78 @@ tab_predict, tab_compare, tab_eda, tab_about = st.tabs(
 )
 
 with tab_predict:
-    if input_mode == "라이브러리 곡 선택":
-        display_options = [_track_display(tid, meta, tags) for tid in track_ids]
-        selected = st.selectbox("곡 선택", range(len(display_options)), format_func=lambda i: display_options[i])
-        st.caption(f"트랙 ID: {track_ids[selected]}")
+    if input_mode == "음원 검색":
+        st.caption(
+            "찾고 싶은 곡을 검색하면 그 곡의 무드를 예측하고, 같은 CNN으로 다른 실제 발매곡들과의 "
+            "임베딩 유사도를 계산해 비슷한 곡을 추천합니다 — 음원 대 음원 비교입니다."
+        )
+        search_query = st.text_input("곡 검색", placeholder="예: 아이유 밤편지")
+        search_clicked = st.button("검색", use_container_width=True)
 
-        selected_audio = _audio_path(track_ids[selected], manifest)
-        if selected_audio:
-            st.audio(selected_audio)
-        else:
-            st.caption("🔇 오디오 파일을 찾을 수 없습니다.")
+        if search_clicked:
+            if not search_query.strip():
+                st.warning("검색어를 입력해주세요.")
+            else:
+                with st.spinner("검색 중..."):
+                    try:
+                        results = itunes_search(search_query, limit=5, country="KR")
+                    except requests.RequestException:
+                        results = []
+                st.session_state.song_search = {"query": search_query, "results": results}
 
-        predict_clicked = st.button("예측 + 추천", use_container_width=True)
+        search_state = st.session_state.get("song_search")
+        if search_state is not None and search_state["query"] == search_query and search_query.strip():
+            results = search_state["results"]
+            if not results:
+                st.info("검색 결과가 없습니다. 다른 검색어로 시도해보세요.")
+            else:
+                options = [f"{r.title} — {r.artist}" for r in results]
+                picked = st.selectbox("검색 결과에서 선택", range(len(options)), format_func=lambda i: options[i])
+                chosen = results[picked]
+                if chosen.artwork_url:
+                    st.image(chosen.artwork_url, width=100)
 
-        if predict_clicked:
-            mel = load_mel(manifest.iloc[selected]["npy_path"])
-            x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
-            with torch.no_grad():
-                logits = model(x)
-                probs = torch.sigmoid(logits)[0].numpy()
-            # 버튼 클릭 상태는 다음 rerun에서 사라지므로, 결과를 세션에
-            # 보관해 사이드바 위젯을 조작해도 예측 결과가 화면에서 사라지지
-            # 않게 한다(곡을 바꾸면 무효화).
-            st.session_state.lib_result = {"selected": selected, "probs": probs}
+                predict_clicked = st.button("예측 + 추천", key="song_search_predict", use_container_width=True)
 
-        lib_result = st.session_state.get("lib_result")
-        if lib_result is not None and lib_result["selected"] == selected:
-            probs = lib_result["probs"]
+                if predict_clicked:
+                    with st.spinner("미리듣기로 무드 예측 중..."):
+                        prediction = _predict_from_preview(chosen.preview_url, cfg.n_mels)
+                    st.session_state.song_result = {
+                        "query": search_query, "picked": picked, "prediction": prediction, "chosen": chosen,
+                    }
 
-            st.divider()
-            st.subheader("예측 무드")
-            top_mood = _render_mood_probs(probs)
+                song_result = st.session_state.get("song_result")
+                if (
+                    song_result is not None
+                    and song_result["query"] == search_query
+                    and song_result["picked"] == picked
+                ):
+                    prediction = song_result["prediction"]
+                    if prediction is None:
+                        st.warning("이 곡은 미리듣기를 분석할 수 없습니다 (프리뷰 없음 또는 디코딩 실패). 다른 곡을 선택해보세요.")
+                    else:
+                        probs, query_embedding = prediction
+                        picked_chosen = song_result["chosen"]
 
-            if show_library:
-                st.divider()
-                st.subheader("비슷한 무드의 곡 Top-5")
-                idxs, sims = top_k_similar(selected, embeddings, k=5)
-                _render_recommendations(idxs, sims)
+                        st.divider()
+                        st.subheader("예측 무드")
+                        top_mood = _render_mood_probs(probs)
 
-            if show_real:
-                st.divider()
-                _render_real_tracks(top_mood, artist_country=artist_country)
+                        if show_real:
+                            st.divider()
+                            _render_real_tracks(
+                                top_mood, artist_country=artist_country, query_embedding=query_embedding,
+                                extra_exclude=((picked_chosen.title, picked_chosen.artist),),
+                            )
+
+                        if show_library:
+                            st.divider()
+                            with st.expander("📚 라이브러리 데모 — 학습 데이터셋에서 비슷한 무드 (DL 과제 연장)"):
+                                idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
+                                _render_recommendations(idxs, sims)
 
     elif input_mode == "오디오 업로드":
-        st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 라이브러리에서 비슷한 곡 5개를 추천받습니다.")
+        st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 비슷한 무드의 곡을 추천받습니다.")
 
         if "uploader_reset_n" not in st.session_state:
             st.session_state.uploader_reset_n = 0
@@ -1057,20 +1272,21 @@ with tab_predict:
             st.subheader("예측 무드")
             top_mood = _render_mood_probs(probs)
 
-            if show_library:
-                st.divider()
-                st.subheader("비슷한 무드의 곡 Top-5")
-                idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
-                _render_recommendations(idxs, sims)
-
             if show_real:
                 st.divider()
-                _render_real_tracks(top_mood, artist_country=artist_country)
+                _render_real_tracks(
+                    top_mood, artist_country=artist_country, query_embedding=query_embedding,
+                )
 
-    else:
+            if show_library:
+                st.divider()
+                with st.expander("📚 라이브러리 데모 — 학습 데이터셋에서 비슷한 무드 (DL 과제 연장)"):
+                    idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
+                    _render_recommendations(idxs, sims)
+
+    elif input_mode == "텍스트로 찾기":
         st.caption(
-            "지금 기분이나 원하는 분위기를 문장으로 입력하면 LLM이 무드를 분석해 "
-            "라이브러리 곡과 실제 발매 음원을 함께 추천합니다. "
+            "지금 기분이나 원하는 분위기를 문장으로 입력하면 LLM이 무드를 분석해 그에 맞는 곡을 추천합니다. "
             "(Ollama 로컬 → Groq API → 키워드 휴리스틱 순 자동 폴백)"
         )
         text_input = st.text_input("지금 기분이 어떤가요?", placeholder="예: 오늘 너무 우울하고 힘들어서 위로받을 음악 듣고 싶어")
@@ -1102,20 +1318,65 @@ with tab_predict:
             if analysis.reason:
                 st.info(f"💡 {analysis.reason}")
 
-            if show_library:
-                st.divider()
-                track_probs = predict_mood_probs(model, embeddings)
-                tag_idx = tags.index(best_tag)
-                order = np.argsort(-track_probs[:, tag_idx])[:5]
-                sims = track_probs[order, tag_idx]
-                st.subheader(f"'{best_tag}' 무드에 가장 잘 맞는 곡 Top-5 (라이브러리)")
-                _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
-
             if show_real:
                 st.divider()
                 _render_real_tracks(
                     best_tag, user_text=text_input, keywords=analysis.search_keywords, artist_country=artist_country,
                 )
+
+            if show_library:
+                st.divider()
+                with st.expander(f"📚 라이브러리 데모 — '{best_tag}' 무드에 가장 잘 맞는 학습 곡 (DL 과제 연장)"):
+                    track_probs = predict_mood_probs(model, embeddings)
+                    tag_idx = tags.index(best_tag)
+                    order = np.argsort(-track_probs[:, tag_idx])[:5]
+                    sims = track_probs[order, tag_idx]
+                    _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
+
+    else:  # "라이브러리 곡 선택" — DL 과제 데모: 학습 데이터셋 안에서 곡을 고른다.
+        st.caption("학습에 쓰인 데이터셋에서 곡을 선택해 무드를 예측합니다 (DL 과제 데모).")
+        display_options = [_track_display(tid, meta, tags) for tid in track_ids]
+        selected = st.selectbox("곡 선택", range(len(display_options)), format_func=lambda i: display_options[i])
+        st.caption(f"트랙 ID: {track_ids[selected]}")
+
+        selected_audio = _audio_path(track_ids[selected], manifest)
+        if selected_audio:
+            st.audio(selected_audio)
+        else:
+            st.caption("🔇 오디오 파일을 찾을 수 없습니다.")
+
+        predict_clicked = st.button("예측 + 추천", use_container_width=True)
+
+        if predict_clicked:
+            mel = load_mel(manifest.iloc[selected]["npy_path"])
+            x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
+            with torch.no_grad():
+                logits = model(x)
+                probs = torch.sigmoid(logits)[0].numpy()
+            # 버튼 클릭 상태는 다음 rerun에서 사라지므로, 결과를 세션에
+            # 보관해 사이드바 위젯을 조작해도 예측 결과가 화면에서 사라지지
+            # 않게 한다(곡을 바꾸면 무효화).
+            st.session_state.lib_result = {"selected": selected, "probs": probs}
+
+        lib_result = st.session_state.get("lib_result")
+        if lib_result is not None and lib_result["selected"] == selected:
+            probs = lib_result["probs"]
+
+            st.divider()
+            st.subheader("예측 무드")
+            top_mood = _render_mood_probs(probs)
+
+            if show_real:
+                st.divider()
+                _render_real_tracks(
+                    top_mood, artist_country=artist_country, query_embedding=embeddings[selected],
+                )
+
+            if show_library:
+                st.divider()
+                with st.expander("📚 라이브러리 데모 — 학습 데이터셋에서 비슷한 무드 (DL 과제 연장)"):
+                    idxs, sims = top_k_similar(selected, embeddings, k=5)
+                    _render_recommendations(idxs, sims)
 
 with tab_compare:
     all_metrics = load_all_metrics()
@@ -1156,14 +1417,21 @@ with tab_eda:
 with tab_about:
     st.subheader("음악 오디오 무드 분류 + 콘텐츠 기반 추천")
     st.markdown(
-        "MTG-Jamendo 무드/테마 서브셋의 멜스펙트로그램으로 CNN 무드 분류 모델을 학습하고, "
-        "분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천합니다. "
-        "분류와 추천을 별도 파이프라인으로 이어붙이지 않고 하나의 모델로 증명하는 DL 포트폴리오 프로젝트입니다.\n\n"
-        "라이브러리에 있는 곡을 고르는 것뿐 아니라, **직접 가진 오디오 파일을 업로드**해 동일한 모델로 무드를 예측하거나, "
-        "**지금 기분을 문장으로 입력**해 그 무드에 맞는 곡을 찾을 수도 있습니다(🔍 예측 탭 상단의 입력 방식 선택).\n\n"
+        "CNN으로 오디오 무드를 분류하고, 그 분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 "
+        "비슷한 무드의 곡을 추천합니다. 분류와 추천을 별도 파이프라인으로 이어붙이지 않고 하나의 모델로 "
+        "증명하는 DL 포트폴리오 프로젝트입니다.\n\n"
+        "**곡 검색**으로 실제 발매곡의 무드를 예측하고 비슷한 곡을 찾거나, **오디오 파일을 업로드**해 "
+        "동일한 모델로 예측하거나, **지금 기분을 문장으로 입력**해 그 무드에 맞는 곡을 찾을 수 있습니다"
+        "(🔍 예측 탭 상단의 입력 방식 선택). 학습에 쓰인 데이터셋에서 곡을 고르는 '라이브러리 곡 선택'은 "
+        "DL 과제 파이프라인을 그대로 보여주는 데모 모드입니다.\n\n"
         "**LLM 확장**: 텍스트 입력은 LLM(Ollama 로컬 → Groq API → 키워드 휴리스틱 폴백)이 무드를 분석하고, "
-        "모든 추천 결과에는 LLM이 제안하고 iTunes 카탈로그로 실존을 검증한 **실제 발매 음원 Top-5**가 "
-        "Spotify · YouTube Music · Apple Music 링크와 함께 표시됩니다(직접 재생 없음 — 저작권 안전)."
+        "모든 추천 결과에는 LLM이 제안하고 iTunes 카탈로그로 실존을 검증한 **추천 Top-5**가 "
+        "Spotify · YouTube Music · Apple Music 링크와 함께 표시됩니다(직접 재생 없음 — 저작권 안전).\n\n"
+        "**DL × LLM 결합 랭킹**: 입력 오디오가 있는 모드(곡 검색/업로드/라이브러리)에서는 추천 후보 각각의 "
+        "iTunes 공식 30초 프리뷰를 동일한 CNN에 통과시켜 임베딩을 뽑고, 입력 곡 임베딩과의 코사인 유사도로 "
+        "Top-5를 재정렬합니다 — LLM이 후보를 찾고, 학습된 DL 모델이 순위를 매기는 구조입니다 "
+        "(프리뷰는 특징 추출 직후 삭제, 저장·재생 없음). '곡 검색' 모드는 이 경로를 라이브러리 없이 "
+        "실제 발매곡 대 실제 발매곡으로 직접 수행합니다."
     )
     stat_cols = st.columns(4)
     stat_cols[0].metric("데이터", "MTG-Jamendo")
