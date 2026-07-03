@@ -20,19 +20,28 @@
 - **2026-07-07 17:30 LLM 과제 제출 / 07-07 오전 발표.** 산출물: 보고서(PPT/PDF) + 소스(ipynb·py) + Streamlit Cloud 시연 → zip 1개 이메일 제출(ahnhg2000@gmail.com, 예: `홍길동_딥러닝_LLM프로젝트.zip`). 범위·요구사항은 [`prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md) 참고.
 - ~~2026-07-01 09:00 DL 과제 발표·시연·제출~~ — 완료.
 
-## 현재 상태 (2026-07-03)
+## 현재 상태 (2026-07-03, 최신 커밋 `8d3c8fa`)
 
 - **Git LFS 완전 미사용** — `model.pt`를 HF Hub 자산 레포로 이전하고 `.gitattributes` 삭제, git 히스토리에서도 제거. 계정 LFS 예산 상태와 무관하게 clone 가능.
-- **LLM 확장(Phase 2) 완료** — `src/llm/mood_analyzer.py`(Ollama→Groq→키워드 3단 폭백), `src/llm/music_search.py`(iTunes 검증된 실음원 Top-5), `app.py` 예측 탭 3개 모드에 "실제 음원 Top-5" 추가. 신규 테스트 25건 포함 **전체 54건 통과**.
+- **LLM 확장(Phase 2) 완료** — `src/llm/mood_analyzer.py`(Ollama→Groq→키워드 3단 폴백), `src/llm/music_search.py`(iTunes 검증된 실음원 Top-5), `app.py` 예측 탭 3개 모드에 "실제 음원 Top-5" 추가.
 - **Ollama 모델 확정** — `gemma4:e2b` 채택(웜업 후 ~14초, `gemma2:latest` 대비 3배 빠름). 첫 로드 ~60초 대응을 위해 타임아웃 90초 분리.
 - **UX 버그 3건 수정** — 업로드 용량 초과 시 ×버튼 클릭 불가, 예측 결과 소실, 업로드 모드 재연산 방지. `submission/music_mood_recs.py`·`.ipynb` 재생성 완료.
 - **발표 개요 문서 작성** — [`docs/llm-presentation-outline.md`](llm-presentation-outline.md) 10슬라이드 분량. pptx 실편집은 미반영.
+- **Groq 클라우드 LLM 경로 실동작 확인 완료** — Groq 로그인 시 "Continue with GitHub"가 콜백 무한 루프에 걸리는 문제 발견(InPrivate에서도 재현되어 쿠키/확장 문제 아님으로 확인) → "Continue with Google"로 우회 성공. API 키 발급 후 Streamlit Cloud Secrets + 로컬 `.streamlit/secrets.toml` 양쪽에 등록 완료.
+- **실음원 추천 "다른 곡" 재시도 캐시 버그 수정** — LLM이 매번 같은 유명곡을 답해 재시도해도 목록이 안 바뀌던 문제. 이전에 보여준 곡을 exclude로 누적해 프롬프트에서 명시적으로 제외하도록 수정(`src/llm/music_search.py`).
+- **실음원 추천에 국가 필터 추가** — 한국(K-pop)/일본(J-pop)/전체 선택 가능, 장르 태그+문자 체계(한글/가나) 이중 검증. 각 추천곡에 무드 매칭 이유(한국어 1문장, 사실 주장 금지)도 함께 생성.
+- **예측 탭 UI 재구성** — 입력 방식/추천 결과 표시/국가 선택을 라디오·체크박스→드롭다운 전환(이모지 제거, 도움말 아이콘 통일), 사이드바의 `데이터:`/`태그:`/`모델:` 텍스트를 이 3개 드롭다운으로 교체, "곡 선택"을 최상위 섹션으로 승격, 라이브러리/업로드/텍스트 3개 입력 모드가 모두 동일한 레이아웃(입력→예측 무드→라이브러리 Top-5→실음원 Top-5) 사용.
+- **git 커밋 히스토리 재작성**(3471e76~HEAD) — GitHub 웹에서 생성된 이질적인 커밋 정리, author/committer date 일치, force-push 완료.
+- **DL × LLM 결합 랭킹 추가** (`src/recommend/preview_rank.py`) — 추천 Top-5 후보 각각의 iTunes 공식 30초 프리뷰(`previewUrl`)를 기존 멜스펙→CNN 경로에 통과시켜 임베딩을 뽑고, 입력 곡 임베딩과의 코사인 유사도로 재정렬(입력 오디오가 있는 모드). LLM이 후보를 찾고 학습된 DL 모델이 순위를 매기는 구조. 프리뷰는 특징 추출 직후 삭제(저장·재생 없음 — 저작권 안전). m4a 디코딩은 pip 설치형 `imageio-ffmpeg` 폴백으로 처리(Streamlit Cloud 호환). 프리뷰 없음/디코딩 실패 곡은 점수 없이 원래 순서 유지.
+- **4번째 입력 모드 "음원 검색" 추가** — 사용자가 실제 발매곡을 검색하면(iTunes) 그 곡의 30초 프리뷰로 무드를 예측하고, 같은 CNN 임베딩으로 다른 실제 발매곡들과의 유사도를 계산해 추천한다. 라이브러리를 전혀 거치지 않는 실음원 대 실음원 비교 경로로, 기존 알고리즘(멜스펙→CNN 임베딩→코사인 유사도)을 100% 재사용한다. 자기 자신이 추천 목록에 나오지 않도록 검색한 곡을 제외 처리.
+- **UI 정식 서비스 톤으로 정리** — "실제 음원 Top-5"류 표현을 "추천 Top-5"로 간소화, 라이브러리 섹션은 모든 모드에서 "📚 라이브러리 데모 — DL 과제 연장" 접이식 섹션으로 하위 배치(추천 Top-5가 먼저 나옴), 입력 방식 드롭다운 순서를 [음원 검색, 오디오 업로드, 텍스트로 찾기, 라이브러리 곡 선택]으로 재배열(라이브러리를 DL 과제 데모로 명확히 후순위 처리), 추천 결과 표시 옵션도 [전체, 추천만, 라이브러리 데모만]으로 리네이밍.
+- **테스트 80건 전체 통과**(preview_rank 8건 포함), 실제 화면에서 "음원 검색" 모드 검색→예측→CNN 재정렬→라이브러리 데모 접이식 섹션까지 전체 플로우 확인.
+- 향후 방향: DL(CNN 임베딩/코사인 유사도)과 LLM 기능이 따로 노는 것처럼 보이지 않게, 새 기능도 최대한 DL 결과를 재사용/연계하는 방향으로 진행할 것.
 
 ## 남은 작업 (P0, LLM 과제 데드라인 2026-07-07 내 필수)
 
-- [ ] Streamlit Cloud Secrets에 `GROQ_API_KEY` 등록 후 재부팅 → 클라우드 LLM 경로 실동작 확인 — Groq 로그인 시 "Continue with GitHub"가 콜백 무한 루프에 걸리는 문제 발견(2026-07-03, InPrivate에서도 재현되어 쿠키/확장 문제 아님으로 확인). **"Continue with Google"로 우회 성공** — 이 계정으로 API 키 발급 후 등록 진행 예정
-- [ ] (선택, 저위험) `docs/llm-presentation-outline.md`에 LangChain 대비 직접 호출+검증 체인 talking point 1~2문장 추가
-- [ ] 로컬 Ollama(`gemma4:e2b`)로 발표 시연 리허설 — 텍스트 무드 분석 + 실음원 Top-5 동선 포함
+- [x] ~~`docs/llm-presentation-outline.md`에 LangChain 대비 직접 호출+검증 체인 talking point 추가~~ — 완료(슬라이드 23 발표 멘트에 반영)
+- [x] ~~로컬 Ollama(`gemma4:e2b`)로 발표 시연 리허설~~ — 완료
 - [ ] 위 개요를 `submission/music_mood_recs.pptx`에 실제 반영(스크린샷 2장 캡처 포함) — 사용자 직접 편집
 - [ ] `submission/`의 ipynb + py + 보고서를 zip(`김관영_딥러닝_LLM프로젝트.zip` 형식)으로 묶어 이메일 제출(ahnhg2000@gmail.com, 2026-07-07 17:30)
 

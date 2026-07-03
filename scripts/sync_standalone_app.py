@@ -43,6 +43,9 @@ BLOCKS: list[tuple[Path, list[str]]] = [
     # (mood_analyzer's fallback calls infer_mood_from_text defined there).
     (Path("src/llm/mood_analyzer.py"), ["*"]),
     (Path("src/llm/music_search.py"), ["*"]),
+    # DL×LLM bridge — needs MoodCNN/MelspecConfig/extract_melspec from the
+    # blocks above, so it must stay last.
+    (Path("src/recommend/preview_rank.py"), ["*"]),
 ]
 
 

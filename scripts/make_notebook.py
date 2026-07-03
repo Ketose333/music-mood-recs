@@ -380,6 +380,26 @@ code(
     "for rt in real_tracks:\n"
     "    print(f'- {rt.title} — {rt.artist} | {rt.links[\"Spotify\"]}')")
 
+md("### 9.1 DL × LLM 결합 랭킹 — CNN 임베딩으로 실제 음원 재정렬\n\n"
+   "LLM이 찾은 실제 음원 후보의 **순위**까지 학습된 모델이 매기도록 연결한다. "
+   "각 후보 곡의 iTunes 공식 30초 프리뷰(`previewUrl` — 애플이 샘플링 용도로 "
+   "공개 제공)를 라이브러리 곡과 동일한 멜스펙 → CNN 경로에 통과시켜 임베딩을 "
+   "얻고, 입력 곡 임베딩과의 코사인 유사도로 Top-5를 재정렬한다. "
+   "프리뷰는 특징 추출 직후 삭제하며 저장·재생하지 않는다(저작권 안전). "
+   "프리뷰가 없거나 디코딩에 실패한 곡은 점수 없이 원래 순서를 유지한다(폴백).")
+code(
+    "import tempfile\n\n"
+    + inline_module("src/recommend/preview_rank.py"))
+
+md("결합 랭킹 데모 — 라이브러리 첫 곡을 입력으로, 실제 음원 후보를 CNN 유사도로 재정렬")
+code(
+    "query_emb = embeddings[0]  # 예: 라이브러리 첫 곡의 임베딩\n"
+    "preview_embs = [embed_preview(rt.preview_url, model, n_mels=model.cfg.n_mels) for rt in real_tracks]\n"
+    "sims = preview_similarities(query_emb, preview_embs)\n"
+    "for rt, sim in rerank_with_similarity(real_tracks, sims):\n"
+    "    score = f'{sim:.4f}' if sim is not None else '프리뷰 없음'\n"
+    "    print(f'- [{score}] {rt.title} — {rt.artist}')")
+
 # ===== 11. 프로토타입 =====
 md("## 10. 프로토타입 (Streamlit)\n\n"
    "``streamlit run app.py`` 로 실행 — 곡 선택/오디오 업로드/텍스트 입력 -> 무드 예측 "
