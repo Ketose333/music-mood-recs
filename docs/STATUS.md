@@ -1,6 +1,6 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-07-02 (Ollama 모델 확정 + 발표자료 개요 반영)
+마지막 갱신: 2026-07-03
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
@@ -11,72 +11,37 @@
 | DL 프레임워크 | PyTorch(CPU 빌드) |
 | 오디오 전처리 | librosa + soundfile, 멜스펙트로그램 |
 | 추천 | scikit-learn(cosine_similarity), 임베딩 재사용 |
-| 데이터 | MTG-Jamendo 무드/테마 서브셋. **`MAX_TARS = 50`으로 재실행 완료** — 0~29번 TAR에 30~49번을 추가로 받아 로컬+HF Hub 양쪽에 동시 저장(`download_and_extract_subset(..., hf_repo_id=...)`). 최종 규모 50 TAR(3,585곡). HF Hub 업로드로 생긴 커밋 21개는 `super_squash_history`로 1개로 재스쿼시 완료. 다음에 또 늘릴 때도(60/70 등) `MAX_TARS`만 올리고 재실행하면 이미 받은 TAR는 건너뛰고 새 TAR만 받아 로컬+HF Hub에 자동으로 이어붙음 |
-| Git 추적 정책 | `models/`만 git 직접 추적(소형). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`(~7GB)는 GitHub LFS 무료 한도(1GB) 초과로 제외, HF Hub 데이터셋 레포(`Ketose333/music-mood-recs-assets`)에 호스팅 — 배포 앱(`app.py`의 `_resolve()`)이 런타임에 `huggingface_hub`로 받아옴 |
-| 보고서 생성 | `submission/보고서.pptx` 단일 파일로 수동 작성·관리(Miricanvas + 직접 편집). `scripts/make_report.py`(python-pptx 자동생성)는 병합 완료 후 삭제됨 |
+| 데이터 | MTG-Jamendo 무드/테마 서브셋, 50 TAR(3,585곡). 로컬+HF Hub(`Ketose333/music-mood-recs-assets`) 동시 저장. 확장 시 `MAX_TARS`만 조정 |
+| Git 추적 정책 | git은 무거운 파일을 추적하지 않음(LFS 미사용, `.gitattributes` 삭제). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`·`models/cnn/model.pt`를 HF Hub에서 런타임 로드(`app.py` `_resolve()`) |
+| 보고서 생성 | `submission/보고서.pptx` 수동 관리 |
 
 ## 데드라인
 
-- ~~2026-07-01 09:00 DL 과제 발표·시연·제출~~ — **완료** (`submission/김관영_딥러닝프로젝트.*` 3종 제출).
 - **2026-07-07 17:30 LLM 과제 제출 / 07-07 오전 발표.** 산출물: 보고서(PPT/PDF) + 소스(ipynb·py) + Streamlit Cloud 시연 → zip 1개 이메일 제출(ahnhg2000@gmail.com, 예: `홍길동_딥러닝_LLM프로젝트.zip`). 범위·요구사항은 [`prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md) 참고.
+- ~~2026-07-01 09:00 DL 과제 발표·시연·제출~~ — 완료.
 
-## 현재 상태 (2026-07-02)
+## 현재 상태 (2026-07-03)
 
-- **LLM 확장(Phase 2) 구현 완료** — 기존 DL 파이프라인·모듈은 무변경, 신규 코드는 `src/llm/`로 분리.
-  - `src/llm/mood_analyzer.py`: 텍스트 무드 판정을 키워드 휴리스틱 → **LLM 3단 폴백 체인**(Ollama 로컬 `gemma4:e2b` → Groq 무료 API `llama-3.3-70b` → 기존 키워드 휴리스틱)으로 교체. JSON 강제 + 태그 밖 무드(환각) 파서 거부. Groq 키는 env/`st.secrets`의 `GROQ_API_KEY`로만 주입.
-  - `src/llm/music_search.py`: **실제 발매 음원 Top-5** — LLM이 무드에 맞는 실존 곡을 제안하면 iTunes Search API(무료·키 불필요)로 검증(환각 차단), Spotify·YouTube Music·Apple Music **검색 링크만** 제공(직접 재생 없음 — 저작권 안전). LLM 불가 시 무드 키워드 iTunes 검색 폴백.
-  - `app.py`: 예측 탭 3개 입력 모드 전부에 "🌐 실제 음원 Top-5" 섹션 추가(1시간 `st.cache_data` 캐시), 텍스트 모드는 LLM 분석 경로·근거·확신도 표시. AUTO-SYNC BLOCKS에 `src/llm/` 2개 모듈 추가, `make_notebook.py`에 §9 LLM 확장 섹션(모듈 인라인 + 데모 셀) 추가 — 제출 구조(단일 py/ipynb) 그대로 유지.
-  - 두 모듈 모두 태그 목록만 입력받으므로 **데이터셋 규모(50/100 TAR)와 무관**하게 동작.
-- **제출 노트북 슬림화(2026-07-02)** — 채점 PC에서 불필요/위험한 부분 제거: `hf_sync.py` 인라인 + `upload_missing_files`(멜스펙)·`upload_file`(embeddings) 호출 삭제(쓰기 토큰 없는 PC에서 embeddings 업로드가 실패하던 잠재 버그이기도 함), 중복 개요 md 병합, 누락 경고 축소. 오디오 다운로드의 `hf_repo_id`는 **읽기 전용 백필**(TAR 재다운로드 회피)이라 유지 — 새 PC에서도 공개 레포라 토큰 없이 동작. **주의: 이제 노트북 재실행은 HF Hub에 업로드하지 않음** — TAR 수 확장 시 `scripts/extract_melspecs.py --hf-repo-id` / `scripts/precompute_embeddings.py --hf-repo-id`로 업로드할 것(오디오는 `scripts/download_audio.py --hf-repo-id`).
-  - 테스트: 신규 `tests/test_mood_analyzer.py`(13) + `tests/test_music_search.py`(12) 포함 **전체 54건 통과**(기존 29건 회귀 없음). LLM/HTTP는 전부 모킹 — 오프라인에서도 테스트 가능.
-- Streamlit Cloud 시연 준비: 앱 대시보드 Secrets에 `GROQ_API_KEY` 등록 필요(미등록 시 텍스트 분석은 키워드 휴리스틱, 실음원은 iTunes 무드 검색으로 폴백 — 크래시 없음).
-- **Ollama 로컬 모델 확정** — 로컬 설치된 `gemma4:e2b`(7.2GB) vs `gemma2:latest`(5.4GB) 두 모델을 동일 무드 분석 프롬프트로 실측 비교: gemma4:e2b가 웜업 후 약 14초, gemma2:latest는 44~85초로 약 3배 느림(JSON 품질은 동등). `gemma4:e2b`를 기본값(`MMR_OLLAMA_MODEL`)으로 채택. 첫 호출은 모델 로드 포함 ~60초라 Ollama 전용 타임아웃을 90초로 분리(`MMR_OLLAMA_TIMEOUT`). 로컬에서 키워드 사전 밖 문장("싱숭생숭해서 뭘 해야 할지 모르겠어")도 `provider=ollama`로 정상 분석되는 것 실측 확인.
-- **발표자료 개요 문서 작성** — [`docs/llm-presentation-outline.md`](llm-presentation-outline.md) 신규. `submission/music_mood_recs.pptx`(현재 22슬라이드, DL 덱 그대로 복사된 상태 — LLM 슬라이드 없음)에 삽입할 슬라이드별 제목·본문·표·발표 멘트를 복붙 가능한 형태로 정리(문제정의→설계원칙→기술스택→3단 폴백 아키텍처→프롬프트 설계→**환각 대응**→로컬 모델 벤치마크→프로토타입 화면 2장→트러블슈팅, 총 10장). 15건 예시 산출물 분석 결과("DL 그대로 + LLM 1장"인 얇은 케이스 2건과 구분되도록 설계) 반영. **pptx 실편집은 사용자 직접 진행 예정, 아직 미반영.**
-
-## 이전 상태 (2026-06-28, DL 과제 제출 시점)
-
-- 모델: `models/cnn/` — 50 TAR(3,585곡) 데이터로 재학습 완료. **best val F1(micro)=0.2994**, **test F1(micro)=0.2618 / accuracy=0.1624 / ROC-AUC=0.7593**(태그: happy/energetic/relaxing/film/dark).
-- 노트북: `submission/music_mood_recs.ipynb` 50 TAR 기준 전체 실행(run all) 끝까지 성공(다운로드~멜스펙~CNN 학습~테스트셋 평가). HF Hub(`Ketose333/music-mood-recs-assets`)에 30~49번 TAR 자동 업로드 후 커밋 히스토리 21개→1개로 재스쿼시 완료. 보고서용 차트(`fig_training_curves.png`/`fig_mood_probs_example.png`/`fig_top5_similarity_example.png`)도 새 결과로 재생성됨.
-- 앱(`app.py`): 4탭(`🔍 예측`/`📊 모델 성능`/`📈 데이터 탐색(EDA)`/`ℹ️ 프로젝트 소개`) 구조. `🔍 예측` 탭 안에서 라디오로 입력 방식 3가지 선택 — **📂 라이브러리 곡 선택 / 🎤 오디오 업로드 / 💬 텍스트로 찾기**(텍스트는 키워드 휴리스틱으로 태그 추정 후 같은 분류기 확률로 추천, 별도 NLP 모델 아님). 로컬·Streamlit Cloud 모두 사용자가 직접 테스트해 정상 동작 확인됨(업로드 용량초과 에러로 ×버튼이 가려지는 문제도 `maxUploadSize` 5→50MB + "🔄 다른 파일 선택" 리셋 버튼으로 해결).
-- **HF Hub 데이터 이전 완료 + 재부팅 검증** — `data/audio`·`artifacts/melspecs`·`embeddings.npy`(~7GB, GitHub LFS 무료 한도 7배 초과 상태였음)를 `Ketose333/music-mood-recs-assets`로 이전, git 히스토리에서도 완전 제거(force-push, `.git` 7.69GB→12MB). `app.py`의 `_resolve()`가 런타임에 huggingface_hub로 받아오도록 변경, Streamlit Cloud 재부팅으로 정상 동작 직접 확인됨. `submission/music_mood_recs.py`·`.ipynb`도 이 변경 반영해 재생성·푸시 완료.
-- 보고서: **part1/part2 분리 구조 폐기 → `submission/보고서.pptx` 단일 파일로 완전 병합 완료**(사용자 직접 작업). 프로토타이핑 화면 3슬라이드(예측+추천 / 오디오업로드·텍스트검색 / 소개탭)는 Streamlit Cloud 재부팅 후 실제 앱을 Playwright로 캡처(1518×886px = 759×443의 2배, 브라우저/Streamlit 툴바 제거한 순수 앱 화면)해 `submission/앱 1 예측화면.png`·`앱 2 업로드텍스트.png`·`앱 3 소개탭.png`로 저장, `make_report.py`로 part2에 1차 첨부 확인 후 최종적으로 part1에 수동 병합. 병합 후 더 이상 필요 없는 옛 노트북 스크린샷 8장(`노트북 N ...png`)·`음악무드분류및추천_보고서_part2.pptx`·**`scripts/make_report.py`(pptx 생성 스크립트) 자체를 모두 삭제**함.
-- 보고서용 차트 6종(EDA 3종 + 학습곡선 + 모델예측 예시 2종)은 `보고서.pptx`에 이미 직접 임베드되어 현재는 코드가 참조하지 않음. 한 차례 출력물(`artifacts/report_figures/`)·스크린샷 원본(`artifacts/app_screens/`)과 함께 생성 스크립트(`plot_training_curves.py`/`plot_prediction_examples.py`)를 레거시로 삭제했었으나, **재학습(30→40/50/60 TAR 등) 시 이 차트들도 다시 그려야 해서 두 스크립트는 복원함**(출력물·스크린샷은 그대로 둠 — 필요해지면 재실행해 다시 생성). 두 스크립트 모두 TAR 개수를 하드코딩하지 않고 `models/cnn/metrics.json`·`artifacts/embeddings.npy` 등 그 시점의 실제 산출물을 그대로 읽으므로, 재학습 후 별도 수정 없이 재실행만 하면 됨(`plot_prediction_examples.py` 독스트링의 "30-TAR 전용" 표현만 일반화하도록 정정). 같은 기준으로 어디서도 호출되지 않던 파이프라인 검증용 합성 데이터 스크립트(`scripts/make_synth_data.py`)와 그 출력물(`artifacts/melspecs_synth/`, `artifacts/melspec_manifest_synth.csv`)은 삭제 유지.
-- **HF Hub 데이터셋 레포(`Ketose333/music-mood-recs-assets`) 정리**: 라이선스 카드(README.md) 추가(MTG-Jamendo 출처+트랙별 CC 라이선스 분포표+비영리 연구용 명시), `app.py`가 안 쓰는 잔여물 20개(묵은 차트 PNG 4·합성테스트데이터 16) 삭제, 커밋 히스토리를 `Initial commit` 1개로 압축. **public 유지**(현재 코드에 토큰 인증이 없어 private 전환 시 채점 PC에서 401 발생 — "어느 PC에서도 실행 가능" 조건 미충족). 정리 후 매니페스트·임베딩·멜스펙·오디오 다운로드 전부 재검증 완료, 로컬 보고서 파일과는 완전히 무관(영향 없음 확인됨).
-- `submission/music_mood_recs.py`는 항상 최신 `app.py`와 동기화돼 있음(매 기능 변경 후 `python scripts/sync_standalone_app.py && python scripts/make_notebook.py`로 재생성). **`scripts/package_submission.py`/`export_pptx_images.py`는 hwp/pptx/pdf/zip 관여 스크립트 일괄 삭제 정책으로 제거됨** — 최종 zip은 `submission/`의 `music_mood_recs.ipynb`+`music_mood_recs.py`+`보고서.pptx` 3개를 수동으로 압축해 제출.
-- **HF Hub 동기화 자동화 보강** — `download_audio.py`는 오디오만 추출 즉시 HF Hub에 올렸고, 멜스펙(`extract_melspecs.py`)·embeddings(`precompute_embeddings.py`)는 자동 업로드 경로가 없었음. 실제로 30→50 TAR 확장 후 이 둘이 HF Hub에서 30 TAR(2,247개) 기준에 멈춰 있어 배포 앱이 `RemoteEntryNotFoundError`로 크래시하는 사고가 발생(수동으로 누락분 업로드해 긴급 복구). 재발 방지로 `src/data/hf_sync.py`(`upload_missing_files`/`upload_file`) 신규 추가, `extract_melspecs.py`/`precompute_embeddings.py`에 `--hf-repo-id` 옵션 추가, 노트북(`make_notebook.py`)도 멜스펙 추출 셀·임베딩 계산 셀에서 이 함수를 호출해 추출/계산 즉시 HF Hub에 자동 업로드되도록 변경 — 이제 노트북 재실행만으로 오디오·멜스펙·embeddings 세 가지 모두 같은 TAR 수 기준으로 동기화됨.
-
-<details>
-<summary>완료된 작업 이력 (펼치기)</summary>
-
-- **모델 재학습/노트북 점검** — 30 TAR 재학습, `metrics.json` test 키 추가, 노트북 stale 텍스트/마크다운-코드 불일치 4건 수정 (`c2c1579` 등).
-- **Streamlit 데모 1차 보강** — review-sentiment 1:1 대응 UI, `st.audio` 재생 추가, 버그 3건 수정(캐시 해싱 `_model`, Windows 백슬래시 경로 크로스플랫폼 정규화, OOM 방지용 임베딩 사전계산) (`2a935cb`/`a088d6f`/`af2b8d0`/`82fe973`).
-- **오디오 업로드 + 텍스트 무드 검색 추가** — 라이브러리 곡만 고를 수 있던 한계 해소. `top_k_similar_to_vector`/`predict_mood_probs`/`infer_mood_from_text`(`src/recommend/similar.py`) 추가, 업로드 파일은 `extract_melspec`으로 동일 전처리 후 같은 모델로 추론 (`3fae9fd`/`dd8fa7a`).
-- **탭 6개 → 4개 통합 + 업로드 ×버튼 가려짐 수정** — 3가지 입력 방식을 별도 탭이 아닌 단일 `🔍 예측` 탭의 라디오 선택으로 합침(review-sentiment와 탭 수 대칭). `maxUploadSize` 5→50MB + 리셋 버튼 추가 (`d337002`).
-- **보고서 PPT 데이터/슬라이드 갱신** — EDA 그림 재생성, 학습 곡선 스크립트 신규(`plot_training_curves.py`), 실데이터 성능 반영, 오디오 업로드/텍스트 검색 슬라이드 신규 추가, stale "future work"(오디오 업로드를 미래 계획으로 적어둔 보완사항 행) 정정 (`ca83b5e` 등 + 이번 세션).
-- **HF Hub 데이터 이전 + 히스토리 재작성** — `data/audio`·`artifacts/melspecs`·`embeddings.npy` git 추적 해제 후 HF Hub(`Ketose333/music-mood-recs-assets`)로 이전, `app.py`에 `_resolve()` 폴백 추가(`84828dd`). `download_audio.py`에 `--hf-repo-id` 옵션 추가해 추출 즉시 업로드 가능하도록 개선(`342ddbf`). `git-filter-repo`로 전체 히스토리에서 해당 경로 제거 후 force-push(`00f7508`, `.git` 12MB). 제출 스냅샷 재생성(`d8e5144`). Streamlit Cloud 재부팅으로 정상 동작 확인됨.
-- **보고서 part1/part2 분리 + 실데이터 차트화 + HF Hub 라이선스 정리** — part1(Miricanvas)·part2(`make_report.py`) 분리 후 part1이 점진적으로 흡수, `make_report.py`도 그만큼 책임 축소(최종: 프로토타이핑 화면 3슬라이드만). EDA 3종·학습곡선·모델예측 2종 차트를 리사이즈 대신 실데이터 재생성(`scripts/plot_prediction_examples.py` 신규, `compute_eda.py`/`plot_training_curves.py` 출력경로·크기 통일), `artifacts/report_figures/`로 일원화. HF Hub 레포에 라이선스 카드 추가(MTG-Jamendo 트랙별 CC 라이선스 점검 결과 포함) + 앱 미사용 잔여물 20개 삭제 + 히스토리 `Initial commit` 1개로 압축, public 유지 결정(토큰 미지원으로 private 시 채점 PC 401).
-- **프로토타이핑 스크린샷 캡처 + 보고서 단일 파일 병합** — Streamlit Cloud 배포 앱을 Playwright로 직접 조작(예측+추천 실행, 텍스트 무드 검색 실행, 소개 탭)해 3장 캡처, 1518×886px(=759×443×2, 브라우저/Streamlit 툴바 제거)로 통일해 `submission/`에 저장. 이후 part1/part2를 `submission/보고서.pptx` 단일 파일로 완전 병합(사용자 작업), 옛 노트북 스크린샷 8장과 part2 PPTX는 더 이상 필요 없어 삭제. `scripts/make_report.py`는 레거시로 전환.
-- **TAR 수 파라미터화 + 레거시 산출물 정리** — `scripts/run_download.cmd`에 `%1` 인자 추가(없으면 기존과 동일 30, `run_download.cmd 60`처럼 다른 TAR 수도 바로 실행 가능). 어디서도 참조되지 않는 레거시 일괄 삭제: 이미 `보고서.pptx`에 임베드된 `artifacts/app_screens/`, 어디서도 호출되지 않는 파이프라인 검증용 `scripts/make_synth_data.py`(+ 출력물 `artifacts/melspecs_synth/`, `artifacts/melspec_manifest_synth.csv`), 묵은 `artifacts/report_figures/` 출력물. `plot_training_curves.py`/`plot_prediction_examples.py`는 재학습(30→40/50/60 TAR 등) 시 보고서 차트를 다시 그리는 용도로 계속 유지 — TAR 개수를 하드코딩하지 않고 그 시점의 `models/cnn/metrics.json`·`artifacts/embeddings.npy`를 그대로 읽어 동작하므로 재학습 후 수정 없이 재실행만 하면 됨(`plot_prediction_examples.py` 독스트링의 "30-TAR 전용" 표현만 일반화하도록 정정). review-sentiment는 대응되는 레거시가 없어 변경 없음(구조적 1:1 대응 유지 확인됨).
-- **30→50 TAR 확장 완료** — 노트북 `MAX_TARS=30→50` 재실행을 끝까지 성공시킴(`keep_local` 듀얼라이트 + `_backfill_from_hf` 두 버그 수정판으로 검증됨). HF Hub에 30~49번 TAR 업로드로 생긴 커밋 21개를 `super_squash_history`로 1개로 재스쿼시. `metrics.json`이 50 TAR(3,585곡) 기준으로 갱신됨에 따라 README.md·`docs/STATUS.md`의 "30 TAR(2,247곡)" 관련 문구 전부 일괄 갱신, 보고서용 차트 3종(`fig_training_curves.png`/`fig_mood_probs_example.png`/`fig_top5_similarity_example.png`) 재생성.
-
-</details>
+- **Git LFS 완전 미사용** — `model.pt`를 HF Hub 자산 레포로 이전하고 `.gitattributes` 삭제, git 히스토리에서도 제거. 계정 LFS 예산 상태와 무관하게 clone 가능.
+- **LLM 확장(Phase 2) 완료** — `src/llm/mood_analyzer.py`(Ollama→Groq→키워드 3단 폭백), `src/llm/music_search.py`(iTunes 검증된 실음원 Top-5), `app.py` 예측 탭 3개 모드에 "실제 음원 Top-5" 추가. 신규 테스트 25건 포함 **전체 54건 통과**.
+- **Ollama 모델 확정** — `gemma4:e2b` 채택(웜업 후 ~14초, `gemma2:latest` 대비 3배 빠름). 첫 로드 ~60초 대응을 위해 타임아웃 90초 분리.
+- **UX 버그 3건 수정** — 업로드 용량 초과 시 ×버튼 클릭 불가, 예측 결과 소실, 업로드 모드 재연산 방지. `submission/music_mood_recs.py`·`.ipynb` 재생성 완료.
+- **발표 개요 문서 작성** — [`docs/llm-presentation-outline.md`](llm-presentation-outline.md) 10슬라이드 분량. pptx 실편집은 미반영.
 
 ## 남은 작업 (P0, LLM 과제 데드라인 2026-07-07 내 필수)
 
-- [ ] Streamlit Cloud Secrets에 `GROQ_API_KEY` 등록 후 재부팅 → 클라우드에서 LLM 경로(텍스트 분석 provider=groq) 실동작 확인 — **사용자가 직접 클라우드에서 실행 후 결과 공유 예정**
-- [x] ~~로컬 Ollama 모델 확정~~ — `gemma4:e2b` 채택(속도 3배, 품질 동등), 텍스트 무드 분석 실동작 검증 완료
+- [ ] (선택, 저위험) `docs/llm-presentation-outline.md`에 LangChain 대비 직접 호출+검증 체인 talking point 1~2문장 추가
 - [ ] 로컬 Ollama(`gemma4:e2b`)로 발표 시연 리허설 — 텍스트 무드 분석 + 실음원 Top-5 동선 포함
-- [x] ~~보고서 LLM 슬라이드 개요 작성~~ — [`docs/llm-presentation-outline.md`](llm-presentation-outline.md) 완료(복붙용, 10슬라이드)
-- [ ] 위 개요를 `submission/music_mood_recs.pptx`에 실제 반영(스크린샷 2장 캡처 포함) — **사용자 직접 편집**
+- [ ] 위 개요를 `submission/music_mood_recs.pptx`에 실제 반영(스크린샷 2장 캡처 포함) — 사용자 직접 편집
 - [ ] `submission/`의 ipynb + py + 보고서를 zip(`김관영_딥러닝_LLM프로젝트.zip` 형식)으로 묶어 이메일 제출(ahnhg2000@gmail.com, 2026-07-07 17:30)
 
 ## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)
 
-- [x] ~~**LLM 연동**: 텍스트 무드 검색을 키워드 휴리스틱 → LLM 기반으로 고도화~~ — **2026-07-02 완료** (`src/llm/mood_analyzer.py`)
-- [x] ~~**LLM 연동**: 추천 곡에 메타데이터(제목/아티스트)·설명 노출~~ — **2026-07-02 완료** (`src/llm/music_search.py`, 실음원 Top-5 + 서비스 링크)
+- [x] ~~LLM 연동: 텍스트 무드 검색 고도화~~ — 완료 (`src/llm/mood_analyzer.py`)
+- [x] ~~LLM 연동: 추천 곡 메타데이터·설명 노출~~ — 완료 (`src/llm/music_search.py`)
 - [ ] CRNN 확장(베이스라인 성능 낮을 시)
-- [ ] 추천 정량 평가 지표 설계(정성 사례 비교 위주로 보고서 작성)
-- [ ] Spotify Web API 연동으로 검색 링크 → 정확한 곡 페이지 링크 고도화(Phase 1 원범위)
+- [ ] 추천 정량 평가 지표 설계
+- [ ] Spotify Web API 연동으로 검색 링크 → 정확한 곡 페이지 링크 고도화
 
 ## 알려진 이슈 (열린 것만)
 
