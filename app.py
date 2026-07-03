@@ -659,7 +659,7 @@ def load_model_artifacts(model_dir: str):
         embedding_dim=cfg_dict["embedding_dim"],
     )
     model = MoodCNN(cfg)
-    model.load_state_dict(torch.load(os.path.join(model_dir, "model.pt"), map_location="cpu"))
+    model.load_state_dict(torch.load(_resolve(os.path.join(model_dir, "model.pt")), map_location="cpu"))
     model.eval()
     return model, tags, cfg
 

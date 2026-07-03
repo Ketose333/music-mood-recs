@@ -15,6 +15,7 @@ env/
 /data/synth_audio/
 /artifacts/melspecs/
 /artifacts/embeddings.npy
+/models/cnn/model.pt
 
 # Logs (not source)
 /logs/
