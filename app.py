@@ -448,6 +448,7 @@ def analyze_mood(text: str, tags: list[str], groq_api_key: str | None = None) ->
 
 # >>> AUTO-SYNCED from src/llm/music_search.py (run scripts/sync_standalone_app.py) >>>
 import json
+import random
 import re
 import urllib.parse
 from dataclasses import dataclass, field
@@ -460,12 +461,12 @@ ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 ITUNES_TIMEOUT = 10
 
 
-MOOD_SEARCH_TERMS: dict[str, str] = {
-    "happy": "happy upbeat feel good pop",
-    "energetic": "energetic workout power up",
-    "relaxing": "relaxing calm acoustic chill",
-    "film": "epic cinematic soundtrack score",
-    "dark": "dark moody melancholic",
+MOOD_SEARCH_TERMS: dict[str, list[str]] = {
+    "happy": ["happy upbeat feel good pop", "sunny cheerful pop hits", "feel good summer pop"],
+    "energetic": ["energetic workout power up", "high energy dance pop", "pump up gym anthem"],
+    "relaxing": ["relaxing calm acoustic chill", "chill lofi calm", "soft acoustic mellow"],
+    "film": ["epic cinematic soundtrack score", "orchestral movie score", "dramatic film score"],
+    "dark": ["dark moody melancholic", "brooding dark alternative", "melancholic minor key"],
 }
 
 
@@ -598,13 +599,20 @@ def recommend_real_tracks(
             provider = llm_provider
 
     if len(tracks) < k:
-        term = " ".join(search_keywords) if search_keywords else MOOD_SEARCH_TERMS.get(mood, f"{mood} music")
+        if search_keywords:
+            term = " ".join(search_keywords)
+        else:
+            term = random.choice(MOOD_SEARCH_TERMS.get(mood, [f"{mood} music"]))
         try:
             candidates = itunes_search(term, limit=max(k * 3, 25), country=country)
         except requests.RequestException:
             candidates = []
-        # Keyword search often returns one artist's whole album back-to-back;
-        # fill with unique artists first, then allow repeats if still short.
+        # iTunes returns the same ordering for the same query every time, so
+        # without shuffling the fallback would recommend the exact same songs
+        # on every call for a given mood. Shuffle first, then fill with unique
+        # artists first, then allow repeats if still short (keyword search
+        # often returns one artist's whole album back-to-back).
+        random.shuffle(candidates)
         for allow_repeat_artist in (False, True):
             for found in candidates:
                 if len(tracks) >= k:
@@ -827,6 +835,25 @@ def _render_real_tracks(mood: str, user_text: str = "", keywords: list[str] | No
             )
 
 
+@st.cache_data(max_entries=4, show_spinner=False)
+def _predict_uploaded_audio(file_bytes: bytes, suffix: str, n_mels: int):
+    """업로드 파일의 (무드 확률, 임베딩)을 계산한다. 업로드 상태에서 다른
+    위젯(라디오 등)만 바꿔도 rerun마다 멜스펙 추출부터 전부 재실행되던 것을
+    파일 내용 기준 캐시로 방지한다."""
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+    try:
+        mel = extract_melspec(tmp_path, MelspecConfig(n_mels=n_mels))
+        x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
+        with torch.no_grad():
+            z = model.embed(x)
+            probs = torch.sigmoid(model.classifier(z))[0].numpy()
+        return probs, z[0].numpy()
+    finally:
+        os.remove(tmp_path)
+
+
 def _render_mood_probs(probs: np.ndarray) -> str:
     top_mood = tags[int(probs.argmax())]
     st.metric("최상위 무드", f"{_MOOD_EMOJI.get(top_mood, '')} {top_mood}", f"{probs.max():.1%}")
@@ -845,6 +872,14 @@ with tab_predict:
         ["📂 라이브러리 곡 선택", "🎤 오디오 업로드", "💬 텍스트로 찾기"],
         horizontal=True,
     )
+    rec_view = st.radio(
+        "추천 결과 표시",
+        ["둘 다", "📂 라이브러리만", "🌐 실제 음원만"],
+        horizontal=True,
+        help="실제 음원 추천은 외부 검색(LLM+iTunes)이 걸려 결과가 길어질 수 있습니다. 필요한 쪽만 골라 보세요.",
+    )
+    show_library = rec_view != "🌐 실제 음원만"
+    show_real = rec_view != "📂 라이브러리만"
     st.divider()
 
     if input_mode == "📂 라이브러리 곡 선택":
@@ -869,18 +904,28 @@ with tab_predict:
             with torch.no_grad():
                 logits = model(x)
                 probs = torch.sigmoid(logits)[0].numpy()
+            # 버튼 클릭 상태는 다음 rerun에서 사라지므로, 결과를 세션에
+            # 보관해 "추천 결과 표시" 라디오 등 다른 위젯을 조작해도 예측
+            # 결과가 화면에서 사라지지 않게 한다(곡을 바꾸면 무효화).
+            st.session_state.lib_result = {"selected": selected, "probs": probs}
+
+        lib_result = st.session_state.get("lib_result")
+        if lib_result is not None and lib_result["selected"] == selected:
+            probs = lib_result["probs"]
 
             with col_out:
                 st.subheader("예측 무드")
                 top_mood = _render_mood_probs(probs)
 
-                st.divider()
-                st.subheader("비슷한 무드의 곡 Top-5")
-                idxs, sims = top_k_similar(selected, embeddings, k=5)
-                _render_recommendations(idxs, sims)
+                if show_library:
+                    st.divider()
+                    st.subheader("비슷한 무드의 곡 Top-5")
+                    idxs, sims = top_k_similar(selected, embeddings, k=5)
+                    _render_recommendations(idxs, sims)
 
-                st.divider()
-                _render_real_tracks(top_mood)
+                if show_real:
+                    st.divider()
+                    _render_real_tracks(top_mood)
 
     elif input_mode == "🎤 오디오 업로드":
         st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 라이브러리에서 비슷한 곡 5개를 추천받습니다.")
@@ -894,38 +939,40 @@ with tab_predict:
             key=f"audio_uploader_{st.session_state.uploader_reset_n}",
         )
 
-        if uploaded is not None:
-            if st.button("🔄 다른 파일 선택", key="reset_uploader_btn"):
-                st.session_state.uploader_reset_n += 1
-                st.rerun()
+        # 리셋 버튼은 항상 노출한다. 50MB 초과 파일은 업로드가 거부되면서
+        # (uploaded=None) 지워지지 않는 오류 칩만 남기는데, 그 칩의 ×버튼은
+        # Streamlit 오류 툴팁에 가려 눌리지 않는다. 업로드 성공 여부와 무관하게
+        # 이 버튼으로 위젯 키를 바꿔 새 업로더를 그려 항상 비울 수 있게 한다.
+        if st.button(
+            "🔄 업로더 초기화 / 다른 파일 선택",
+            key="reset_uploader_btn",
+            help="올린 파일을 지우거나, 50MB 초과 오류 칩이 지워지지 않을 때 눌러주세요.",
+        ):
+            st.session_state.uploader_reset_n += 1
+            st.rerun()
 
+        if uploaded is not None:
             st.audio(uploaded)
             with st.spinner("멜스펙트로그램 추출 + 무드 예측 중..."):
                 suffix = os.path.splitext(uploaded.name)[1] or ".mp3"
-                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                    tmp.write(uploaded.getvalue())
-                    tmp_path = tmp.name
-                try:
-                    mel = extract_melspec(tmp_path, MelspecConfig(n_mels=cfg.n_mels))
-                    x = torch.from_numpy(mel).unsqueeze(0).unsqueeze(0)
-                    with torch.no_grad():
-                        z = model.embed(x)
-                        probs = torch.sigmoid(model.classifier(z))[0].numpy()
-                    query_embedding = z[0].numpy()
-                finally:
-                    os.remove(tmp_path)
+                probs, query_embedding = _predict_uploaded_audio(
+                    uploaded.getvalue(), suffix, cfg.n_mels
+                )
 
             col_in, col_out = st.columns([1, 2])
             with col_in:
                 st.subheader("예측 무드")
                 top_mood = _render_mood_probs(probs)
             with col_out:
-                st.subheader("비슷한 무드의 곡 Top-5")
-                idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
-                _render_recommendations(idxs, sims)
+                if show_library:
+                    st.subheader("비슷한 무드의 곡 Top-5")
+                    idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
+                    _render_recommendations(idxs, sims)
 
-                st.divider()
-                _render_real_tracks(top_mood)
+                if show_real:
+                    if show_library:
+                        st.divider()
+                    _render_real_tracks(top_mood)
 
     else:
         st.caption(
@@ -942,16 +989,25 @@ with tab_predict:
             else:
                 with st.spinner("LLM이 무드를 분석하는 중..."):
                     analysis = analyze_mood(text_input, tags, groq_api_key=GROQ_API_KEY)
-                best_tag = analysis.mood
+                # 라이브러리 모드와 같은 이유로 세션에 보관 — 결과를 본 뒤
+                # "추천 결과 표시"를 바꿔도 분석 결과가 유지된다(문장을
+                # 수정하면 무효화되어 다시 "무드 찾기"를 눌러야 함).
+                st.session_state.text_result = {"text": text_input, "analysis": analysis}
 
-                st.success(
-                    f"추정된 무드: {_MOOD_EMOJI.get(best_tag, '')} **{best_tag}** "
-                    f"(확신도 {analysis.confidence:.0%})"
-                )
-                st.caption(f"분석 경로: {_PROVIDER_LABEL.get(analysis.provider, analysis.provider)}")
-                if analysis.reason:
-                    st.info(f"💡 {analysis.reason}")
+        text_result = st.session_state.get("text_result")
+        if text_result is not None and text_result["text"] == text_input:
+            analysis = text_result["analysis"]
+            best_tag = analysis.mood
 
+            st.success(
+                f"추정된 무드: {_MOOD_EMOJI.get(best_tag, '')} **{best_tag}** "
+                f"(확신도 {analysis.confidence:.0%})"
+            )
+            st.caption(f"분석 경로: {_PROVIDER_LABEL.get(analysis.provider, analysis.provider)}")
+            if analysis.reason:
+                st.info(f"💡 {analysis.reason}")
+
+            if show_library:
                 track_probs = predict_mood_probs(model, embeddings)
                 tag_idx = tags.index(best_tag)
                 order = np.argsort(-track_probs[:, tag_idx])[:5]
@@ -959,7 +1015,9 @@ with tab_predict:
                 st.subheader(f"'{best_tag}' 무드에 가장 잘 맞는 곡 Top-5 (라이브러리)")
                 _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
 
-                st.divider()
+            if show_real:
+                if show_library:
+                    st.divider()
                 _render_real_tracks(best_tag, user_text=text_input, keywords=analysis.search_keywords)
 
 with tab_compare:

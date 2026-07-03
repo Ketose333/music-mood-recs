@@ -15,6 +15,7 @@ copyright exposure — the Chosic-style UX.
 from __future__ import annotations
 
 import json
+import random
 import re
 import urllib.parse
 from dataclasses import dataclass, field
@@ -28,13 +29,17 @@ ITUNES_TIMEOUT = 10
 
 # LLM-less fallback search terms per trained mood tag. Keyed by tag name so a
 # bigger tag set (different dataset size/config) just needs new entries; tags
-# without an entry fall back to the tag name itself as the search term.
-MOOD_SEARCH_TERMS: dict[str, str] = {
-    "happy": "happy upbeat feel good pop",
-    "energetic": "energetic workout power up",
-    "relaxing": "relaxing calm acoustic chill",
-    "film": "epic cinematic soundtrack score",
-    "dark": "dark moody melancholic",
+# without an entry fall back to the tag name itself as the search term. Each
+# mood has several phrasing variants — one is picked at random per call so
+# repeated searches for the same mood don't always hit iTunes with the exact
+# same query (which would otherwise return the exact same Top-5 every time,
+# since the API itself is deterministic for identical params).
+MOOD_SEARCH_TERMS: dict[str, list[str]] = {
+    "happy": ["happy upbeat feel good pop", "sunny cheerful pop hits", "feel good summer pop"],
+    "energetic": ["energetic workout power up", "high energy dance pop", "pump up gym anthem"],
+    "relaxing": ["relaxing calm acoustic chill", "chill lofi calm", "soft acoustic mellow"],
+    "film": ["epic cinematic soundtrack score", "orchestral movie score", "dramatic film score"],
+    "dark": ["dark moody melancholic", "brooding dark alternative", "melancholic minor key"],
 }
 
 
@@ -167,13 +172,20 @@ def recommend_real_tracks(
             provider = llm_provider
 
     if len(tracks) < k:
-        term = " ".join(search_keywords) if search_keywords else MOOD_SEARCH_TERMS.get(mood, f"{mood} music")
+        if search_keywords:
+            term = " ".join(search_keywords)
+        else:
+            term = random.choice(MOOD_SEARCH_TERMS.get(mood, [f"{mood} music"]))
         try:
             candidates = itunes_search(term, limit=max(k * 3, 25), country=country)
         except requests.RequestException:
             candidates = []
-        # Keyword search often returns one artist's whole album back-to-back;
-        # fill with unique artists first, then allow repeats if still short.
+        # iTunes returns the same ordering for the same query every time, so
+        # without shuffling the fallback would recommend the exact same songs
+        # on every call for a given mood. Shuffle first, then fill with unique
+        # artists first, then allow repeats if still short (keyword search
+        # often returns one artist's whole album back-to-back).
+        random.shuffle(candidates)
         for allow_repeat_artist in (False, True):
             for found in candidates:
                 if len(tracks) >= k:

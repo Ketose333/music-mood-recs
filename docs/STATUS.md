@@ -30,6 +30,7 @@
 
 ## 남은 작업 (P0, LLM 과제 데드라인 2026-07-07 내 필수)
 
+- [ ] Streamlit Cloud Secrets에 `GROQ_API_KEY` 등록 후 재부팅 → 클라우드 LLM 경로 실동작 확인 — Groq 로그인 시 "Continue with GitHub"가 콜백 무한 루프에 걸리는 문제 발견(2026-07-03, InPrivate에서도 재현되어 쿠키/확장 문제 아님으로 확인). **"Continue with Google"로 우회 성공** — 이 계정으로 API 키 발급 후 등록 진행 예정
 - [ ] (선택, 저위험) `docs/llm-presentation-outline.md`에 LangChain 대비 직접 호출+검증 체인 talking point 1~2문장 추가
 - [ ] 로컬 Ollama(`gemma4:e2b`)로 발표 시연 리허설 — 텍스트 무드 분석 + 실음원 Top-5 동선 포함
 - [ ] 위 개요를 `submission/music_mood_recs.pptx`에 실제 반영(스크린샷 2장 캡처 포함) — 사용자 직접 편집

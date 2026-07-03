@@ -5,11 +5,7 @@ __pycache__/
 venv/
 env/
 
-# Raw audio + heavy derived artifacts: hosted on the HF dataset repo
-# (Ketose333/music-mood-recs-assets) instead of git — git LFS storage for
-# these was ~7x over GitHub's free quota. app.py downloads them on demand via
-# huggingface_hub (see _resolve() in app.py). Re-create locally with
-# scripts/download_audio.py / scripts/extract_melspecs.py if needed.
+# Heavy data/model files: hosted on the HF Hub dataset repo
 /data/audio/
 /data/jamendo/
 /data/synth_audio/
@@ -17,19 +13,16 @@ env/
 /artifacts/embeddings.npy
 /models/cnn/model.pt
 
-# Logs (not source)
+# Logs: runtime output, not source
 /logs/
 
 # Submission/report artifacts: local-only, never tracked in git
 /submission/
 
-# Assignment reference material (course handouts): local-only
-/04.LLM 산출물 예시/
-
-# Claude Code local config (launch.json etc.)
+# Claude Code local config (launch.json etc.): machine-specific, not source
 /.claude/
 
-# Streamlit / secrets
+# Secrets: never commit real credentials
 .streamlit/secrets.toml
 .env
 .env.*
