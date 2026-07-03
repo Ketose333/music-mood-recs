@@ -480,6 +480,34 @@ class RealTrack:
     artwork_url: str = ""
     genre: str = ""
     links: dict[str, str] = field(default_factory=dict)
+    reason: str = ""
+
+
+_COUNTRY_FILTERS: dict[str, dict] = {
+    "KR": {
+        "prompt_label": "한국 국내 가수(K-pop/국내 발매곡)",
+        "genres": {"K-Pop", "Korean Pop", "Trot", "Korean Hip-Hop", "Korean R&B/Soul"},
+        "script_re": re.compile(r"[가-힣]"),
+        "search_suffix": "케이팝",
+    },
+    "JP": {
+        "prompt_label": "일본 가수(J-pop/국내 발매곡)",
+        "genres": {"J-Pop", "J-Rock", "Anime", "Japanese Pop"},
+        "script_re": re.compile(r"[぀-ヿ]"),  # Hiragana + Katakana
+        "search_suffix": "제이팝",
+    },
+}
+
+
+def matches_country(track: "RealTrack", country: str) -> bool:
+    """Heuristic: country-specific genre tag, or that country's script in the
+    title/artist. ``country`` is a key of ``_COUNTRY_FILTERS`` (e.g. "KR")."""
+    cfg = _COUNTRY_FILTERS.get(country)
+    if cfg is None:
+        return True
+    if track.genre in cfg["genres"]:
+        return True
+    return bool(cfg["script_re"].search(track.title) or cfg["script_re"].search(track.artist))
 
 
 def service_links(title: str, artist: str, itunes_url: str = "") -> dict[str, str]:
@@ -530,21 +558,37 @@ def verify_track(title: str, artist: str, country: str = "KR") -> RealTrack | No
     return results[0] if results else None
 
 
-def build_song_prompt(mood: str, user_text: str, k: int) -> str:
+def build_song_prompt(
+    mood: str, user_text: str, k: int, artist_country: str | None = None,
+    exclude: list[tuple[str, str]] | None = None,
+) -> str:
     context = f"\n사용자의 원래 문장(분위기 참고): {user_text}" if user_text else ""
+    country_rule = ""
+    if artist_country and artist_country in _COUNTRY_FILTERS:
+        label = _COUNTRY_FILTERS[artist_country]["prompt_label"]
+        country_rule = f"\n- 반드시 {label}만 추천하세요. 다른 국가 아티스트는 제외."
+    # LLM은 같은 프롬프트에 매번 가장 유명한 곡부터 답하는 경향이 있어, "다른 곡"
+    # 재시도가 그냥 같은 Top-5를 반복하는 문제가 있었다. 이전에 이미 보여준 곡을
+    # 명시적으로 제외 목록에 넣어야 실제로 다른 곡이 나온다.
+    exclude_rule = ""
+    if exclude:
+        exclude_list = ", ".join(f"{t} - {a}" for t, a in exclude)
+        exclude_rule = f"\n- 다음 곡은 이미 추천했으니 절대 다시 추천하지 마세요: {exclude_list}"
     return (
         f"'{mood}' 무드에 어울리는, 실제로 발매된 유명한 곡을 {k + 3}개 추천하세요."
         f"{context}\n\n"
         "규칙:\n"
-        "- 실존하는 곡만. 확실하지 않은 곡은 넣지 마세요.\n"
+        "- 실존하는 곡만. 확실하지 않은 곡은 넣지 마세요."
+        f"{country_rule}{exclude_rule}\n"
         "- 반드시 JSON 객체 하나만 출력: "
-        '{"songs": [{"title": "<곡명>", "artist": "<아티스트>"}, ...]}\n'
+        '{"songs": [{"title": "<곡명>", "artist": "<아티스트>", '
+        '"reason": "<이 곡이 왜 이 무드와 어울리는지 한국어 1문장. 가사·줄거리 등 사실 주장 금지, 분위기/장르 톤만 언급>"}, ...]}\n'
         "- 다양한 아티스트로 구성하세요 (한 아티스트 최대 1곡)."
     )
 
 
-def parse_song_response(raw: str) -> list[tuple[str, str]]:
-    """Extract (title, artist) pairs from the LLM reply; [] when unparseable."""
+def parse_song_response(raw: str) -> list[tuple[str, str, str]]:
+    """Extract (title, artist, reason) triples from the LLM reply; [] when unparseable."""
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
         return []
@@ -552,15 +596,16 @@ def parse_song_response(raw: str) -> list[tuple[str, str]]:
         data = json.loads(match.group(0))
     except json.JSONDecodeError:
         return []
-    pairs: list[tuple[str, str]] = []
+    triples: list[tuple[str, str, str]] = []
     for song in data.get("songs", []) if isinstance(data, dict) else []:
         if not isinstance(song, dict):
             continue
         title = str(song.get("title", "")).strip()
         artist = str(song.get("artist", "")).strip()
+        reason = str(song.get("reason", "")).strip()
         if title and artist:
-            pairs.append((title, artist))
-    return pairs
+            triples.append((title, artist, reason))
+    return triples
 
 
 def recommend_real_tracks(
@@ -570,29 +615,46 @@ def recommend_real_tracks(
     k: int = 5,
     groq_api_key: str | None = None,
     country: str = "KR",
+    artist_country: str | None = None,
+    exclude: list[tuple[str, str]] | None = None,
 ) -> tuple[list[RealTrack], str]:
     """Top-k released tracks for ``mood``; returns (tracks, provider).
 
     provider: "ollama"/"groq" when LLM candidates (iTunes-verified) were used,
     "itunes" when only the keyword search produced results. LLM candidates are
     verified one by one and topped up from keyword search if too few survive.
+    ``artist_country`` (a key of ``_COUNTRY_FILTERS``, e.g. "KR"/"JP") drops
+    candidates that don't match from both sources (see ``matches_country``)
+    rather than relaxing the filter to hit ``k`` — fewer, correctly-filtered
+    results beat a wrong-country song slipping in. ``country`` is unrelated:
+    it's just the iTunes storefront region used to verify/search tracks.
+    ``exclude``: (title, artist) pairs already shown to the user (e.g. from a
+    previous "다른 곡" reroll) — the LLM is told to avoid them and they are
+    filtered out of both sources, so rerolling actually returns new songs
+    instead of the same well-known picks the LLM tends to default to.
     """
     tracks: list[RealTrack] = []
     provider = "itunes"
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str]] = {(t.lower(), a.lower()) for t, a in (exclude or [])}
 
-    chat = llm_chat(build_song_prompt(mood, user_text, k), groq_api_key=groq_api_key)
+    chat = llm_chat(
+        build_song_prompt(mood, user_text, k, artist_country=artist_country, exclude=exclude),
+        groq_api_key=groq_api_key,
+    )
     if chat is not None:
         raw, llm_provider = chat
-        for title, artist in parse_song_response(raw):
+        for title, artist, reason in parse_song_response(raw):
             if len(tracks) >= k:
                 break
             found = verify_track(title, artist, country=country)
             if found is None:
                 continue
+            if artist_country and not matches_country(found, artist_country):
+                continue
             key = (found.title.lower(), found.artist.lower())
             if key in seen:
                 continue
+            found.reason = reason or f"'{mood}' 무드와 어울리는 곡으로 LLM이 추천했습니다."
             seen.add(key)
             tracks.append(found)
         if tracks:
@@ -603,10 +665,14 @@ def recommend_real_tracks(
             term = " ".join(search_keywords)
         else:
             term = random.choice(MOOD_SEARCH_TERMS.get(mood, [f"{mood} music"]))
+        if artist_country and artist_country in _COUNTRY_FILTERS:
+            term = f"{term} {_COUNTRY_FILTERS[artist_country]['search_suffix']}"
         try:
             candidates = itunes_search(term, limit=max(k * 3, 25), country=country)
         except requests.RequestException:
             candidates = []
+        if artist_country:
+            candidates = [c for c in candidates if matches_country(c, artist_country)]
         # iTunes returns the same ordering for the same query every time, so
         # without shuffling the fallback would recommend the exact same songs
         # on every call for a given mood. Shuffle first, then fill with unique
@@ -624,6 +690,7 @@ def recommend_real_tracks(
                     t.artist.lower() == found.artist.lower() for t in tracks
                 ):
                     continue
+                found.reason = f"'{mood}' 무드 검색으로 찾은 {found.genre or '추천'} 곡입니다."
                 seen.add(key)
                 tracks.append(found)
 
@@ -759,11 +826,26 @@ except Exception as exc:
 
 with st.sidebar:
     st.divider()
-    st.markdown(
-        f"**데이터**: {len(track_ids)}곡\n\n"
-        f"**태그**: {', '.join(tags)}\n\n"
-        f"**모델**: MoodCNN ({sum(p.numel() for p in model.parameters()):,} params)"
+    input_mode = st.selectbox(
+        "입력 방식",
+        ["라이브러리 곡 선택", "오디오 업로드", "텍스트로 찾기"],
+        help="무드를 예측할 방법을 선택하세요.",
     )
+    rec_view = st.selectbox(
+        "추천 결과 표시",
+        ["전체", "라이브러리만", "실제 음원만"],
+        help="실제 음원 추천은 외부 검색(LLM+iTunes)이 걸려 결과가 길어질 수 있습니다. 필요한 쪽만 골라 보세요.",
+    )
+    show_library = rec_view != "실제 음원만"
+    show_real = rec_view != "라이브러리만"
+    artist_country = None
+    if show_real:
+        country_choice = st.selectbox(
+            "국가 선택",
+            ["전체", "한국", "일본"],
+            help="실제 음원 Top-5를 특정 국가 가수(K-pop/J-pop 등 국내 발매곡)로 제한할지 선택하세요.",
+        )
+        artist_country = {"한국": "KR", "일본": "JP"}.get(country_choice)
 
 st.success(f"모델 로드 완료 — {len(track_ids)}곡, 태그: {', '.join(tags)}")
 
@@ -802,25 +884,53 @@ _PROVIDER_LABEL = {
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _cached_real_tracks(mood: str, user_text: str, keywords: tuple[str, ...]):
+def _cached_real_tracks(
+    mood: str, user_text: str, keywords: tuple[str, ...], _reroll: int = 0, artist_country: str | None = None,
+    exclude: tuple[tuple[str, str], ...] = (),
+):
     return recommend_real_tracks(
         mood, user_text=user_text, search_keywords=list(keywords) or None,
-        k=5, groq_api_key=GROQ_API_KEY,
+        k=5, groq_api_key=GROQ_API_KEY, artist_country=artist_country, exclude=list(exclude),
     )
 
 
-def _render_real_tracks(mood: str, user_text: str = "", keywords: list[str] | None = None) -> None:
+def _render_real_tracks(
+    mood: str, user_text: str = "", keywords: list[str] | None = None, artist_country: str | None = None,
+) -> None:
     """'실제 음원 Top-5' — LLM 추천 곡을 iTunes 카탈로그로 검증해 보여주고,
     각 서비스의 검색/곡 페이지 링크만 제공한다(직접 재생 없음 — 저작권 안전)."""
-    st.subheader(f"🌐 '{mood}' 무드의 실제 음원 Top-5")
+    # 캐시 키에는 (무드, 문장, 검색어)만 들어가므로, 캐시가 살아있는 동안
+    # (ttl=3600) 같은 입력으로 다시 눌러도 원래는 같은 결과가 나온다 — 다른
+    # 위젯(표시 옵션 등)을 조작할 때마다 LLM+iTunes를 다시 호출하지 않기
+    # 위해 캐싱은 유지하되, "다른 곡" 버튼을 누르면 세션별 재시도 횟수를
+    # 캐시 키에 얹어 강제로 새 결과를 뽑는다.
+    reroll_key = f"real_tracks_reroll::{mood}::{user_text}::{tuple(keywords or [])}::{artist_country}"
+    seen_key = f"{reroll_key}::seen"
+    reroll_n = st.session_state.get(reroll_key, 0)
+    # LLM은 같은 프롬프트에 매번 가장 유명한 곡부터 답하는 경향이 있어, 캐시만
+    # 무효화해서는 "다른 곡"이 여전히 같은 Top-5를 반복했다 — 지금까지 이
+    # 무드/조건으로 보여준 모든 곡을 누적해 다음 호출에서 제외 목록으로 넘긴다.
+    already_shown: list[tuple[str, str]] = st.session_state.get(seen_key, [])
+    col_title, col_reroll = st.columns([4, 1])
+    col_title.subheader(f"🌐 '{mood}' 무드의 실제 음원 Top-5")
+    if col_reroll.button("🔀 다른 곡", key=f"reroll_btn::{reroll_key}", help="같은 무드로 다른 추천을 다시 받습니다"):
+        reroll_n += 1
+        st.session_state[reroll_key] = reroll_n
     with st.spinner("실제 발매 음원 검색 중... (LLM 추천 + iTunes 검증)"):
         try:
-            real_tracks, provider = _cached_real_tracks(mood, user_text, tuple(keywords or []))
+            real_tracks, provider = _cached_real_tracks(
+                mood, user_text, tuple(keywords or []), reroll_n,
+                artist_country=artist_country, exclude=tuple(already_shown),
+            )
         except Exception:
             real_tracks, provider = [], "itunes"
     if not real_tracks:
-        st.info("외부 음원 검색에 실패했습니다 (네트워크 확인). 라이브러리 추천은 위에서 계속 사용할 수 있습니다.")
+        msg = "선택한 국가 조건에 맞는 곡을 찾지 못했습니다. 필터를 해제하거나 다시 시도해보세요." if artist_country else (
+            "외부 음원 검색에 실패했습니다 (네트워크 확인). 라이브러리 추천은 위에서 계속 사용할 수 있습니다."
+        )
+        st.info(msg)
         return
+    st.session_state[seen_key] = already_shown + [(t.title, t.artist) for t in real_tracks]
     st.caption(f"추천 경로: {_PROVIDER_LABEL.get(provider, provider)} · 곡 존재 여부는 iTunes 카탈로그로 검증됨")
     for rt in real_tracks:
         with st.container(border=True):
@@ -830,6 +940,8 @@ def _render_real_tracks(mood: str, user_text: str = "", keywords: list[str] | No
             col_info.markdown(f"**{rt.title}**  \n{rt.artist}")
             if rt.album or rt.genre:
                 col_info.caption(" · ".join(x for x in [rt.album, rt.genre] if x))
+            if rt.reason:
+                col_info.caption(f"💡 {rt.reason}")
             col_links.markdown(
                 "  \n".join(f"[{name}]({url})" for name, url in rt.links.items())
             )
@@ -867,36 +979,18 @@ tab_predict, tab_compare, tab_eda, tab_about = st.tabs(
 )
 
 with tab_predict:
-    input_mode = st.radio(
-        "입력 방식",
-        ["📂 라이브러리 곡 선택", "🎤 오디오 업로드", "💬 텍스트로 찾기"],
-        horizontal=True,
-    )
-    rec_view = st.radio(
-        "추천 결과 표시",
-        ["둘 다", "📂 라이브러리만", "🌐 실제 음원만"],
-        horizontal=True,
-        help="실제 음원 추천은 외부 검색(LLM+iTunes)이 걸려 결과가 길어질 수 있습니다. 필요한 쪽만 골라 보세요.",
-    )
-    show_library = rec_view != "🌐 실제 음원만"
-    show_real = rec_view != "📂 라이브러리만"
-    st.divider()
+    if input_mode == "라이브러리 곡 선택":
+        display_options = [_track_display(tid, meta, tags) for tid in track_ids]
+        selected = st.selectbox("곡 선택", range(len(display_options)), format_func=lambda i: display_options[i])
+        st.caption(f"트랙 ID: {track_ids[selected]}")
 
-    if input_mode == "📂 라이브러리 곡 선택":
-        col_in, col_out = st.columns([1, 2])
+        selected_audio = _audio_path(track_ids[selected], manifest)
+        if selected_audio:
+            st.audio(selected_audio)
+        else:
+            st.caption("🔇 오디오 파일을 찾을 수 없습니다.")
 
-        with col_in:
-            display_options = [_track_display(tid, meta, tags) for tid in track_ids]
-            selected = st.selectbox("곡 선택", range(len(display_options)), format_func=lambda i: display_options[i])
-            st.caption(f"트랙 ID: {track_ids[selected]}")
-
-            selected_audio = _audio_path(track_ids[selected], manifest)
-            if selected_audio:
-                st.audio(selected_audio)
-            else:
-                st.caption("🔇 오디오 파일을 찾을 수 없습니다.")
-
-            predict_clicked = st.button("예측 + 추천", use_container_width=True)
+        predict_clicked = st.button("예측 + 추천", use_container_width=True)
 
         if predict_clicked:
             mel = load_mel(manifest.iloc[selected]["npy_path"])
@@ -905,29 +999,29 @@ with tab_predict:
                 logits = model(x)
                 probs = torch.sigmoid(logits)[0].numpy()
             # 버튼 클릭 상태는 다음 rerun에서 사라지므로, 결과를 세션에
-            # 보관해 "추천 결과 표시" 라디오 등 다른 위젯을 조작해도 예측
-            # 결과가 화면에서 사라지지 않게 한다(곡을 바꾸면 무효화).
+            # 보관해 사이드바 위젯을 조작해도 예측 결과가 화면에서 사라지지
+            # 않게 한다(곡을 바꾸면 무효화).
             st.session_state.lib_result = {"selected": selected, "probs": probs}
 
         lib_result = st.session_state.get("lib_result")
         if lib_result is not None and lib_result["selected"] == selected:
             probs = lib_result["probs"]
 
-            with col_out:
-                st.subheader("예측 무드")
-                top_mood = _render_mood_probs(probs)
+            st.divider()
+            st.subheader("예측 무드")
+            top_mood = _render_mood_probs(probs)
 
-                if show_library:
-                    st.divider()
-                    st.subheader("비슷한 무드의 곡 Top-5")
-                    idxs, sims = top_k_similar(selected, embeddings, k=5)
-                    _render_recommendations(idxs, sims)
+            if show_library:
+                st.divider()
+                st.subheader("비슷한 무드의 곡 Top-5")
+                idxs, sims = top_k_similar(selected, embeddings, k=5)
+                _render_recommendations(idxs, sims)
 
-                if show_real:
-                    st.divider()
-                    _render_real_tracks(top_mood)
+            if show_real:
+                st.divider()
+                _render_real_tracks(top_mood, artist_country=artist_country)
 
-    elif input_mode == "🎤 오디오 업로드":
+    elif input_mode == "오디오 업로드":
         st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 라이브러리에서 비슷한 곡 5개를 추천받습니다.")
 
         if "uploader_reset_n" not in st.session_state:
@@ -959,20 +1053,19 @@ with tab_predict:
                     uploaded.getvalue(), suffix, cfg.n_mels
                 )
 
-            col_in, col_out = st.columns([1, 2])
-            with col_in:
-                st.subheader("예측 무드")
-                top_mood = _render_mood_probs(probs)
-            with col_out:
-                if show_library:
-                    st.subheader("비슷한 무드의 곡 Top-5")
-                    idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
-                    _render_recommendations(idxs, sims)
+            st.divider()
+            st.subheader("예측 무드")
+            top_mood = _render_mood_probs(probs)
 
-                if show_real:
-                    if show_library:
-                        st.divider()
-                    _render_real_tracks(top_mood)
+            if show_library:
+                st.divider()
+                st.subheader("비슷한 무드의 곡 Top-5")
+                idxs, sims = top_k_similar_to_vector(query_embedding, embeddings, k=5)
+                _render_recommendations(idxs, sims)
+
+            if show_real:
+                st.divider()
+                _render_real_tracks(top_mood, artist_country=artist_country)
 
     else:
         st.caption(
@@ -990,8 +1083,8 @@ with tab_predict:
                 with st.spinner("LLM이 무드를 분석하는 중..."):
                     analysis = analyze_mood(text_input, tags, groq_api_key=GROQ_API_KEY)
                 # 라이브러리 모드와 같은 이유로 세션에 보관 — 결과를 본 뒤
-                # "추천 결과 표시"를 바꿔도 분석 결과가 유지된다(문장을
-                # 수정하면 무효화되어 다시 "무드 찾기"를 눌러야 함).
+                # 사이드바 위젯을 바꿔도 분석 결과가 유지된다(문장을 수정하면
+                # 무효화되어 다시 "무드 찾기"를 눌러야 함).
                 st.session_state.text_result = {"text": text_input, "analysis": analysis}
 
         text_result = st.session_state.get("text_result")
@@ -999,6 +1092,8 @@ with tab_predict:
             analysis = text_result["analysis"]
             best_tag = analysis.mood
 
+            st.divider()
+            st.subheader("예측 무드")
             st.success(
                 f"추정된 무드: {_MOOD_EMOJI.get(best_tag, '')} **{best_tag}** "
                 f"(확신도 {analysis.confidence:.0%})"
@@ -1008,6 +1103,7 @@ with tab_predict:
                 st.info(f"💡 {analysis.reason}")
 
             if show_library:
+                st.divider()
                 track_probs = predict_mood_probs(model, embeddings)
                 tag_idx = tags.index(best_tag)
                 order = np.argsort(-track_probs[:, tag_idx])[:5]
@@ -1016,9 +1112,10 @@ with tab_predict:
                 _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
 
             if show_real:
-                if show_library:
-                    st.divider()
-                _render_real_tracks(best_tag, user_text=text_input, keywords=analysis.search_keywords)
+                st.divider()
+                _render_real_tracks(
+                    best_tag, user_text=text_input, keywords=analysis.search_keywords, artist_country=artist_country,
+                )
 
 with tab_compare:
     all_metrics = load_all_metrics()
