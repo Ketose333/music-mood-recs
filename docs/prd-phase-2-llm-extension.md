@@ -4,13 +4,13 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 상태 | Active |
+| 상태 | Done |
 | 담당자 | 본인 (단독 개발) |
-| 마지막 업데이트 | 2026-07-02 |
+| 마지막 업데이트 | 2026-07-04 |
 | 목표 릴리즈 또는 마일스톤 | **2026-07-07 17:30 제출 / 07-07 오전 발표** (LLM 프로젝트 과제) |
 | 원천 후보 | Phase 0 PRD의 P1 이월 항목 2건 (LLM 무드 분석 고도화, 추천 곡 메타데이터 노출) |
 | Phase | `2` — LLM 기반 자연어 무드 분석 + 실제 발매 음원 추천 확장 |
-| 관련 문서 | [`docs/prd.md`](prd.md)(Phase 0, DL 파이프라인) · [`docs/prd-phase-1-streaming-integration.md`](prd-phase-1-streaming-integration.md)(Phase 1 Draft, 본 Phase가 검색 링크 방식으로 일부 선행 구현) |
+| 관련 문서 | [`docs/prd.md`](prd.md)(Phase 0, DL 파이프라인) |
 
 ### 변경 이력
 

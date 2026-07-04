@@ -1175,10 +1175,7 @@ tab_predict, tab_compare, tab_eda, tab_about = st.tabs(
 
 with tab_predict:
     if input_mode == "음원 검색":
-        st.caption(
-            "찾고 싶은 곡을 검색하면 그 곡의 무드를 예측하고, 같은 CNN으로 다른 실제 발매곡들과의 "
-            "임베딩 유사도를 계산해 비슷한 곡을 추천합니다 — 음원 대 음원 비교입니다."
-        )
+        st.caption("찾고 싶은 곡을 검색하면 무드를 분석하고, 비슷한 분위기의 곡을 추천합니다.")
         search_query = st.text_input("곡 검색", placeholder="예: 아이유 밤편지")
         search_clicked = st.button("검색", use_container_width=True)
 
@@ -1245,7 +1242,7 @@ with tab_predict:
                                 _render_recommendations(idxs, sims)
 
     elif input_mode == "오디오 업로드":
-        st.caption("내 컴퓨터에 있는 오디오 파일을 직접 올려서 무드를 예측하고, 비슷한 무드의 곡을 추천받습니다.")
+        st.caption("오디오 파일을 업로드하면 무드를 분석하고, 비슷한 분위기의 곡을 추천합니다.")
 
         if "uploader_reset_n" not in st.session_state:
             st.session_state.uploader_reset_n = 0
@@ -1293,10 +1290,7 @@ with tab_predict:
                     _render_recommendations(idxs, sims)
 
     elif input_mode == "텍스트로 찾기":
-        st.caption(
-            "지금 기분이나 원하는 분위기를 문장으로 입력하면 LLM이 무드를 분석해 그에 맞는 곡을 추천합니다. "
-            "(Ollama 로컬 → Groq API → 키워드 휴리스틱 순 자동 폴백)"
-        )
+        st.caption("지금 기분이나 원하는 분위기를 문장으로 입력하면 무드를 분석해 그에 맞는 곡을 추천합니다.")
         text_input = st.text_input("지금 기분이 어떤가요?", placeholder="예: 오늘 너무 우울하고 힘들어서 위로받을 음악 듣고 싶어")
         text_clicked = st.button("무드 찾기", use_container_width=True)
 
@@ -1341,8 +1335,8 @@ with tab_predict:
                     sims = track_probs[order, tag_idx]
                     _render_recommendations(order, sims, score_label=f"{best_tag} 확률")
 
-    else:  # "라이브러리 곡 선택" — DL 과제 데모: 학습 데이터셋 안에서 곡을 고른다.
-        st.caption("학습에 쓰인 데이터셋에서 곡을 선택해 무드를 예측합니다 (DL 과제 데모).")
+    else:  # "라이브러리 곡 선택" — 학습 데이터셋 안에서 곡을 고른다.
+        st.caption("라이브러리에서 곡을 선택하면 무드를 분석하고, 비슷한 분위기의 곡을 추천합니다.")
         display_options = [_track_display(tid, meta, tags) for tid in track_ids]
         selected = st.selectbox("곡 선택", range(len(display_options)), format_func=lambda i: display_options[i])
         st.caption(f"트랙 ID: {track_ids[selected]}")
@@ -1399,7 +1393,6 @@ with tab_compare:
         st.caption("test split(held-out)으로 평가한 최종 일반화 성능. test가 없는 모델은 마지막 epoch 검증 성능으로 대체.")
         st.divider()
         st.dataframe(comparison_df, use_container_width=True)
-        st.bar_chart(comparison_df[["Accuracy", "F1(micro)", "F1(macro)"]], stack=False)
 
 with tab_eda:
     tag_counts = {t: int(meta[f"tag_{t}"].sum()) for t in tags}
@@ -1414,32 +1407,19 @@ with tab_eda:
     st.bar_chart(tag_df)
 
     st.divider()
-    split_counts = meta["split"].value_counts()
-    st.markdown("**train/validation/test 분할**")
-    st.bar_chart(split_counts)
-
-    st.divider()
     st.markdown("**곡 길이(초) 분포**")
     st.bar_chart(pd.cut(meta["DURATION"], bins=10).value_counts().sort_index().rename(lambda i: str(i)))
 
 with tab_about:
-    st.subheader("음악 오디오 무드 분류 + 콘텐츠 기반 추천")
+    st.subheader("음악 무드 분류 + 추천")
     st.markdown(
-        "CNN으로 오디오 무드를 분류하고, 그 분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 "
-        "비슷한 무드의 곡을 추천합니다. 분류와 추천을 별도 파이프라인으로 이어붙이지 않고 하나의 모델로 "
-        "증명하는 DL 포트폴리오 프로젝트입니다.\n\n"
-        "**곡 검색**으로 실제 발매곡의 무드를 예측하고 비슷한 곡을 찾거나, **오디오 파일을 업로드**해 "
-        "동일한 모델로 예측하거나, **지금 기분을 문장으로 입력**해 그 무드에 맞는 곡을 찾을 수 있습니다"
-        "(🔍 예측 탭 상단의 입력 방식 선택). 학습에 쓰인 데이터셋에서 곡을 고르는 '라이브러리 곡 선택'은 "
-        "DL 과제 파이프라인을 그대로 보여주는 데모 모드입니다.\n\n"
-        "**LLM 확장**: 텍스트 입력은 LLM(Ollama 로컬 → Groq API → 키워드 휴리스틱 폴백)이 무드를 분석하고, "
-        "모든 추천 결과에는 LLM이 제안하고 iTunes 카탈로그로 실존을 검증한 **추천 Top-5**가 "
-        "Spotify · YouTube Music · Apple Music 링크와 함께 표시됩니다(직접 재생 없음 — 저작권 안전).\n\n"
-        "**DL × LLM 결합 랭킹**: 입력 오디오가 있는 모드(곡 검색/업로드/라이브러리)에서는 추천 후보 각각의 "
-        "iTunes 공식 30초 프리뷰를 동일한 CNN에 통과시켜 임베딩을 뽑고, 입력 곡 임베딩과의 코사인 유사도로 "
-        "Top-5를 재정렬합니다 — LLM이 후보를 찾고, 학습된 DL 모델이 순위를 매기는 구조입니다 "
-        "(프리뷰는 특징 추출 직후 삭제, 저장·재생 없음). '곡 검색' 모드는 이 경로를 라이브러리 없이 "
-        "실제 발매곡 대 실제 발매곡으로 직접 수행합니다."
+        "음악의 무드를 분석하고, 비슷한 분위기의 곡을 추천해 드리는 서비스입니다.\n\n"
+        "**곡 검색** · **오디오 업로드** · **문장으로 기분 입력** · **라이브러리 선택** 중 원하는 방식으로 "
+        "무드를 분석하고 비슷한 분위기의 곡을 추천받을 수 있습니다(🔍 예측 탭 상단에서 입력 방식을 선택하세요).\n\n"
+        "추천 곡은 실제로 발매된 음악 중에서 선별되며, Spotify · YouTube Music · Apple Music 검색 링크로 "
+        "바로 이동할 수 있습니다(저작권 보호를 위해 앱 안에서 직접 재생은 지원하지 않습니다).\n\n"
+        "오디오를 입력한 경우(곡 검색 · 업로드 · 라이브러리)에는 추천 후보들과의 실제 음향 유사도까지 "
+        "반영해 더 정교하게 순위를 매깁니다."
     )
     stat_cols = st.columns(4)
     stat_cols[0].metric("데이터", "MTG-Jamendo")

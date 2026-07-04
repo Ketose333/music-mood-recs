@@ -4,14 +4,14 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 상태 | Draft (6일 데드라인 범위로 조정 완료) |
+| 상태 | Done |
 | 담당자 | 본인 (단독 개발) |
 | 마지막 업데이트 | 2026-06-25 |
 | 목표 릴리즈 또는 마일스톤 | **2026-07-01 09:00 발표·시연·제출** (딥러닝 모델 과제) |
 | 학습 환경 | CPU(로컬, torch CPU 빌드) — GPU 없음 |
 | 원천 후보 | `../ai-service-blueprints/_workspace-docs/topic-brainstorming.md` `T-026` |
 | Phase | `0`(MVP, 본 문서) |
-| 관련 문서 | [`docs/prd-phase-1-streaming-integration.md`](prd-phase-1-streaming-integration.md)(Phase 1, 외부 스트리밍 연동 — Draft) · [`docs/prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md)(Phase 2, LLM 확장 — Active) |
+| 관련 문서 | [`docs/prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md)(Phase 2, LLM 확장 — Done) |
 
 ### 변경 이력
 
@@ -26,7 +26,7 @@
 이 PRD는 music-mood-recs의 **Phase 0(MVP)** 범위를 정의한다.
 
 - **다루는 범위**: 음악 오디오 무드 분류 모델 학습(CNN/CRNN, 멜스펙트로그램 입력), 분류 임베딩을 재사용한 콘텐츠 기반 추천(코사인 유사도), Streamlit 데모 앱, 모델 평가.
-- **다루지 않는 범위**: 외부 스트리밍 서비스 연동(Spotify 등 실제 음원 재생/검색), 모바일 앱, 실시간 마이크 입력 무드 분류, 사용자 계정/인증, 다중 사용자 개인화. 이들은 Phase 0과 다른 도메인/기술 영역이므로 [`docs/prd-phase-1-streaming-integration.md`](prd-phase-1-streaming-integration.md) 등 별도 phase 문서에서 다룬다.
+- **다루지 않는 범위**: 외부 스트리밍 서비스 직접 재생/OAuth 연동, 모바일 앱, 실시간 마이크 입력 무드 분류, 사용자 계정/인증, 다중 사용자 개인화. 실제 발매 음원 검색 링크 제공은 [`docs/prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md)에서 iTunes 검증 + Spotify/YouTube Music/Apple Music 링크 방식으로 구현 완료.
 - **이 문서로 내릴 결정**: 데이터셋 선정, 베이스라인 모델 구조, MVP 시연 범위, 추천 방식(임베딩 재사용 vs 별도 모델), 평가 방식.
 
 ## 2. 프로젝트 개요
@@ -138,7 +138,7 @@ music-mood-recs는 음악 오디오(MTG-Jamendo 또는 MagnaTagATune)에서 멜�
 
 - CRNN 확장, 하이퍼파라미터 튜닝 심화 — 보고서 "5. 보완사항 및 개선점"으로 서술(P1 이월).
 - 추천 정량 평가 지표 설계 — 보고서 "5. 보완사항"으로 서술(P1 이월, §24 Q3).
-- 실제 음원 스트리밍 재생, 외부 음악 서비스 API 연동 — [`docs/prd-phase-1-streaming-integration.md`](prd-phase-1-streaming-integration.md).
+- 실제 음원 스트리밍 재생, 외부 음악 서비스 OAuth 연동 — 검색 링크 방식은 [`docs/prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md)에서 구현 완료.
 - 모바일 앱, 실시간 마이크 입력 — 필요해지면 별도 phase 문서로 분리.
 - 다중 사용자 계정, 개인화 추천 — MVP는 단일 데모 사용자 기준.
 
@@ -281,7 +281,7 @@ flowchart LR
 
 **다른 도메인/기술 영역 확장은 여기 쌓지 않고 별도 phase 문서로 분리한다.**
 
-- 외부 스트리밍 서비스 연동(실제 음원 재생/검색) → [`docs/prd-phase-1-streaming-integration.md`](prd-phase-1-streaming-integration.md).
+- 외부 스트리밍 서비스 직접 재생/OAuth 연동 — 필요해지면 별도 phase 문서로 분리(검색 링크 방식은 Phase 2에서 이미 구현).
 - 모바일 앱, 실시간 마이크 입력 무드 분석 — 구체적으로 추진하기로 결정되면 그때 phase 문서를 새로 만든다(현재는 §24 열린 질문으로만 남김).
 
 ## 21. 가정과 검증

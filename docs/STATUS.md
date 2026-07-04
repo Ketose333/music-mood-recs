@@ -20,13 +20,13 @@
 - **2026-07-07 17:30 LLM 과제 제출 / 07-07 오전 발표.** 산출물: 보고서(PPT/PDF) + 소스(ipynb·py) + Streamlit Cloud 시연 → zip 1개 이메일 제출(ahnhg2000@gmail.com, 예: `홍길동_딥러닝_LLM프로젝트.zip`). 범위·요구사항은 [`prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md) 참고.
 - ~~2026-07-01 09:00 DL 과제 발표·시연·제출~~ — 완료.
 
-## 현재 상태 (2026-07-04, 최신 커밋 `f525aac`)
+## 현재 상태 (2026-07-04)
 
 - **Git LFS 완전 미사용** — `model.pt`를 HF Hub 자산 레포로 이전하고 `.gitattributes` 삭제, git 히스토리에서도 제거. 계정 LFS 예산 상태와 무관하게 clone 가능.
 - **LLM 확장(Phase 2) 완료** — `src/llm/mood_analyzer.py`(Ollama→Groq→키워드 3단 폴백), `src/llm/music_search.py`(iTunes 검증된 실음원 Top-5), `app.py` 예측 탭 3개 모드에 "실제 음원 Top-5" 추가.
 - **Ollama 모델 확정** — `gemma4:e2b` 채택(웜업 후 ~14초, `gemma2:latest` 대비 3배 빠름). 첫 로드 ~60초 대응을 위해 타임아웃 90초 분리.
 - **UX 버그 3건 수정** — 업로드 용량 초과 시 ×버튼 클릭 불가, 예측 결과 소실, 업로드 모드 재연산 방지. `submission/music_mood_recs.py`·`.ipynb` 재생성 완료.
-- **발표 개요 문서 작성** — [`docs/llm-presentation-outline.md`](llm-presentation-outline.md) 10슬라이드 분량. pptx 실편집은 미반영.
+- **발표자료 최종 완료** — LLM 확장 섹션(05) 실편집 반영 + 퇴고(참고 예시 15건 대비 톤·분량 점검) 완료. 총 27슬라이드(01~04 DL 18장, 05 LLM 9장, 06 마무리 2장 구성). 편집 작업용 메모였던 `docs/llm-presentation-outline.md`는 반영 완료 후 삭제.
 - **Groq 클라우드 LLM 경로 실동작 확인 완료** — Groq 로그인 시 "Continue with GitHub"가 콜백 무한 루프에 걸리는 문제 발견(InPrivate에서도 재현되어 쿠키/확장 문제 아님으로 확인) → "Continue with Google"로 우회 성공. API 키 발급 후 Streamlit Cloud Secrets + 로컬 `.streamlit/secrets.toml` 양쪽에 등록 완료.
 - **실음원 추천 "다른 곡" 재시도 캐시 버그 수정** — LLM이 매번 같은 유명곡을 답해 재시도해도 목록이 안 바뀌던 문제. 이전에 보여준 곡을 exclude로 누적해 프롬프트에서 명시적으로 제외하도록 수정(`src/llm/music_search.py`).
 - **실음원 추천에 국가 필터 추가** — 한국(K-pop)/일본(J-pop)/전체 선택 가능, 장르 태그+문자 체계(한글/가나) 이중 검증. 각 추천곡에 무드 매칭 이유(한국어 1문장, 사실 주장 금지)도 함께 생성.
@@ -44,9 +44,9 @@
 
 ## 남은 작업 (P0, LLM 과제 데드라인 2026-07-07 내 필수)
 
-- [x] ~~`docs/llm-presentation-outline.md`에 LangChain 대비 직접 호출+검증 체인 talking point 추가~~ — 완료(슬라이드 23 발표 멘트에 반영)
+- [x] ~~LangChain 대비 직접 호출+검증 체인 talking point 반영~~ — 완료(슬라이드 21 환각 대응)
 - [x] ~~로컬 Ollama(`gemma4:e2b`)로 발표 시연 리허설~~ — 완료
-- [ ] 위 개요를 `submission/music_mood_recs.pptx`에 실제 반영(스크린샷 2장 캡처 포함) — 사용자 직접 편집
+- [x] ~~`submission/music_mood_recs.pptx` 실편집(스크린샷 캡처 포함) + 퇴고~~ — 완료(27슬라이드 최종본)
 - [ ] `submission/`의 ipynb + py + 보고서를 zip(`김관영_딥러닝_LLM프로젝트.zip` 형식)으로 묶어 이메일 제출(ahnhg2000@gmail.com, 2026-07-07 17:30)
 
 ## P1 (보고서 "보완사항"으로 서술, 후속 이월 — 미착수)

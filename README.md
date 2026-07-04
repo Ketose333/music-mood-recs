@@ -125,9 +125,8 @@ tests/                       pytest 단위 테스트
 
 docs/
   STATUS.md                  인프라/진행상황/다음작업 작업 로그
-  prd.md                     제품 요구사항 (Phase 0: 무드 분류 + 콘텐츠 기반 추천)
-  prd-phase-1-streaming-integration.md   Phase 1(외부 스트리밍 연동) — Draft
-  prd-phase-2-llm-extension.md           Phase 2(LLM 확장: 자연어 무드 분석 + 실음원 추천) — Active
+  prd.md                     제품 요구사항 (Phase 0: 무드 분류 + 콘텐츠 기반 추천) — Done
+  prd-phase-2-llm-extension.md           Phase 2(LLM 확장: 자연어 무드 분석 + 실음원 추천) — Done
 ```
 
 ## 로컬 환경 셋업
