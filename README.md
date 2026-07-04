@@ -33,7 +33,7 @@ MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스�
 | 데이터셋 | MTG-Jamendo 무드/테마 서브셋 |
 | 출처 | [github.com/MTG/mtg-jamendo-dataset](https://github.com/MTG/mtg-jamendo-dataset) |
 | 태그 | 상위 5 태그(happy, energetic, relaxing, film, dark) |
-| 규모 | 오디오 TAR 50개 기준 3,585곡 |
+| 규모 | 오디오 TAR 100개(전체) 기준 6,725곡 |
 | 포맷 | 오디오(저비트레이트 mp3) + 멜스펙트로그램(30초 세그먼트, 128 mels, `.npy`) |
 | 라이선스 | 메타데이터 CC BY-NC-SA 4.0, 오디오 개별 CC 라이선스(비상업 연구용) |
 
@@ -43,7 +43,7 @@ MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스�
 
 ```
 MTG-Jamendo 메타데이터
-  └─ scripts/download_audio.py        상위 5 태그 서브셋 필터 + 오디오 TAR 다운로드(--max-tars 50)
+  └─ scripts/download_audio.py        상위 5 태그 서브셋 필터 + 오디오 TAR 다운로드(--max-tars 100)
        └─ scripts/extract_melspecs.py 멜스펙트로그램 추출(30초 세그먼트, log-mel, 128 mels)
             └─ scripts/train_cnn.py   MoodCNN 학습(BCEWithLogitsLoss, CPU)
                  ├─ models/cnn/             학습된 아티팩트 저장
@@ -55,7 +55,7 @@ MTG-Jamendo 메타데이터
 ## 진행 현황
 
 - [x] MTG-Jamendo 메타데이터 로드·상위 5 태그 서브셋 필터
-- [x] 오디오 다운로드 + 멜스펙트로그램 추출 (50 TAR, 3,585곡)
+- [x] 오디오 다운로드 + 멜스펙트로그램 추출 (100 TAR 전체, 6,725곡)
 - [x] MoodCNN 학습·평가 (train/val/test 분리)
 - [x] 임베딩 재사용 코사인 유사도 Top-5 추천
 - [x] EDA (태그 분포/길이 분포/멜스펙 예시)
@@ -69,9 +69,9 @@ MTG-Jamendo 메타데이터
 
 | 모델 | val F1(micro) | test F1(micro) | test Accuracy | test ROC-AUC | 특징 |
 | --- | --- | --- | --- | --- | --- |
-| **MoodCNN** | **0.2994** | 0.2618 | 0.1624 | 0.7593 | 단순 CNN(~28K params), 멜스펙트로그램 입력, CPU 학습 |
+| **MoodCNN** | **0.3477** | 0.2227 | 0.1448 | 0.7199 | 단순 CNN(~28K params), 멜스펙트로그램 입력, CPU 학습 |
 
-> 성능 수치는 50 TAR(3,585곡) 기준 **로컬/CPU 실측치**. 단순 CNN·소규모 데이터·CPU 제약으로 분류 성능 자체는 낮지만, ROC-AUC(0.7593)는 분류기로서 최소한의 변별력을 갖췄음을 보여준다. 후속 개선 방향(CRNN 확장 등)은 `docs/STATUS.md` 참고.
+> 성능 수치는 100 TAR 전체(6,725곡) 기준 **로컬/CPU 실측치**. 단순 CNN·CPU 제약으로 분류 성능 자체는 낮지만, ROC-AUC(0.7199)는 분류기로서 최소한의 변별력을 갖췄음을 보여준다. 데이터 규모가 50→100 TAR로 늘었다고 test F1(micro)이 항상 개선되지는 않았음(0.2618 → 0.2227) — 단순 CNN 용량 한계로 보이며, 후속 개선 방향(CRNN 확장 등)은 `docs/STATUS.md` 참고.
 
 ## 기능
 
@@ -79,12 +79,14 @@ MTG-Jamendo 메타데이터
 | --- | --- | --- |
 | MTG-Jamendo 메타데이터 로드·상위 5 태그 필터 | ✅ | `scripts/download_audio.py` |
 | 오디오 다운로드 + 멜스펙트로그램 추출 | ✅ | `scripts/extract_melspecs.py`, `src/preprocessing/melspec.py` |
-| MoodCNN 학습·평가 | ✅ | **val F1(micro) 0.2977 / test F1(micro) 0.2642**, `models/cnn/` |
+| MoodCNN 학습·평가 | ✅ | **val F1(micro) 0.3477 / test F1(micro) 0.2227**(100 TAR 전체), `models/cnn/` |
 | 임베딩 재사용 코사인 유사도 추천 | ✅ | `src/recommend/`, `scripts/precompute_embeddings.py`로 사전계산 |
 | 라이브러리 곡 선택 → 무드 예측 → 추천 5곡 + 오디오 재생 | ✅ | "🔍 예측" 탭 → 입력 방식 "📂 라이브러리 곡 선택", `st.audio` |
 | **내 오디오 파일 업로드 → 무드 예측 → 추천 5곡** | ✅ | "🔍 예측" 탭 → 입력 방식 "🎤 오디오 업로드" — 업로드 파일을 같은 모델로 멜스펙 추출 + 추론(`src/preprocessing/melspec.py:extract_melspec`), 임베딩을 라이브러리 임베딩과 코사인 유사도 비교(`top_k_similar_to_vector`) |
 | **텍스트로 기분 입력 → LLM 무드 분석 → 추천 5곡** | ✅ | "🔍 예측" 탭 → 입력 방식 "💬 텍스트로 찾기" — LLM 3단 폴백 체인(Ollama 로컬 → Groq 무료 API → 키워드 휴리스틱)으로 무드 추론(`src/llm/mood_analyzer.py:analyze_mood`), 추정 무드에 대한 분류기 확률 상위 5곡 추천(`predict_mood_probs`) |
-| **실제 발매 음원 Top-5 (LLM + iTunes 검증)** | ✅ | 예측 탭 3개 입력 모드 전부 — LLM이 무드에 맞는 실존 곡을 제안하면 iTunes Search API로 검증(환각 차단), Spotify·YouTube Music·Apple Music **검색 링크만** 제공(직접 재생 없음 — 저작권 안전). `src/llm/music_search.py:recommend_real_tracks` |
+| **실제 발매곡 검색 → 무드 예측 → 실제 발매곡 추천** | ✅ | "🔍 예측" 탭 → 입력 방식 "🔎 음원 검색" — iTunes에서 실제 발매곡을 검색해 30초 프리뷰로 무드 예측, 같은 CNN 임베딩으로 다른 실제 발매곡과 유사도 비교(라이브러리 미경유) |
+| **DL × LLM 결합 랭킹** | ✅ | 오디오 입력이 있는 모드에서 LLM이 찾은 추천 후보 Top-5 각각의 iTunes 프리뷰를 CNN에 통과시켜 입력 곡과의 코사인 유사도로 재정렬(`src/recommend/preview_rank.py`). 프리뷰는 특징 추출 직후 삭제(저장·재생 없음) |
+| **실제 발매 음원 Top-5 (LLM + iTunes 검증)** | ✅ | 예측 탭 4개 입력 모드 전부 — LLM이 무드에 맞는 실존 곡을 제안하면 iTunes Search API로 검증(환각 차단), Spotify·YouTube Music·Apple Music **검색 링크만** 제공(직접 재생 없음 — 저작권 안전). `src/llm/music_search.py:recommend_real_tracks` |
 | EDA (태그 분포·재생시간 분포·멜스펙 예시) | ✅ | 앱 "데이터 탐색(EDA)" 탭, `scripts/compute_eda.py`로 사전계산 |
 | 클라우드 메모리 최적화 | ✅ | 임베딩 사전계산(`artifacts/embeddings.npy`) + 멜스펙 지연 로딩 (무료 티어 1GB OOM 방지) |
 | Streamlit Cloud 배포 | ✅ | Python 3.11 고정 필요 (아래 "배포" 참고) |
@@ -139,7 +141,7 @@ pip install -r requirements.txt
 
 ```bash
 # 1. 데이터 다운로드 (메타데이터 + 오디오 TAR)
-python scripts/download_audio.py --top-n 5 --max-tars 30
+python scripts/download_audio.py --top-n 5 --max-tars 100
 
 # 2. 멜스펙트로그램 일괄 추출
 python scripts/extract_melspecs.py --audio-dir data/audio --out artifacts/melspecs
@@ -162,7 +164,7 @@ python scripts/compute_eda.py
 streamlit run app.py
 ```
 
-"🔍 예측" 탭에서 입력 방식(라이브러리 곡 선택 / 오디오 업로드 / 텍스트로 찾기)을 고르면 무드 예측 결과 + 비슷한 무드 추천 5곡(오디오 재생 포함). "📊 모델 성능" 탭에서 학습된 모델의 F1/Accuracy/ROC-AUC 확인.
+"🔍 예측" 탭에서 입력 방식(음원 검색 / 오디오 업로드 / 텍스트로 찾기 / 라이브러리 곡 선택)을 고르면 무드 예측 결과 + 비슷한 무드 추천 5곡(오디오 재생 포함). "📊 모델 성능" 탭에서 학습된 모델의 F1/Accuracy/ROC-AUC 확인.
 
 ## 테스트
 

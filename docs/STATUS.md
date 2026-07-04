@@ -1,6 +1,6 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-07-03
+마지막 갱신: 2026-07-04
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
@@ -11,7 +11,7 @@
 | DL 프레임워크 | PyTorch(CPU 빌드) |
 | 오디오 전처리 | librosa + soundfile, 멜스펙트로그램 |
 | 추천 | scikit-learn(cosine_similarity), 임베딩 재사용 |
-| 데이터 | MTG-Jamendo 무드/테마 서브셋, 50 TAR(3,585곡). 로컬+HF Hub(`Ketose333/music-mood-recs-assets`) 동시 저장. 확장 시 `MAX_TARS`만 조정 |
+| 데이터 | MTG-Jamendo 무드/테마 서브셋, 100 TAR 전체(6,725곡). 로컬+HF Hub(`Ketose333/music-mood-recs-assets`) 동시 저장 |
 | Git 추적 정책 | git은 무거운 파일을 추적하지 않음(LFS 미사용, `.gitattributes` 삭제). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`·`models/cnn/model.pt`를 HF Hub에서 런타임 로드(`app.py` `_resolve()`) |
 | 보고서 생성 | `submission/보고서.pptx` 수동 관리 |
 
@@ -20,7 +20,7 @@
 - **2026-07-07 17:30 LLM 과제 제출 / 07-07 오전 발표.** 산출물: 보고서(PPT/PDF) + 소스(ipynb·py) + Streamlit Cloud 시연 → zip 1개 이메일 제출(ahnhg2000@gmail.com, 예: `홍길동_딥러닝_LLM프로젝트.zip`). 범위·요구사항은 [`prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md) 참고.
 - ~~2026-07-01 09:00 DL 과제 발표·시연·제출~~ — 완료.
 
-## 현재 상태 (2026-07-03, 최신 커밋 `8d3c8fa`)
+## 현재 상태 (2026-07-04, 최신 커밋 `f525aac`)
 
 - **Git LFS 완전 미사용** — `model.pt`를 HF Hub 자산 레포로 이전하고 `.gitattributes` 삭제, git 히스토리에서도 제거. 계정 LFS 예산 상태와 무관하게 clone 가능.
 - **LLM 확장(Phase 2) 완료** — `src/llm/mood_analyzer.py`(Ollama→Groq→키워드 3단 폴백), `src/llm/music_search.py`(iTunes 검증된 실음원 Top-5), `app.py` 예측 탭 3개 모드에 "실제 음원 Top-5" 추가.
@@ -37,6 +37,10 @@
 - **UI 정식 서비스 톤으로 정리** — "실제 음원 Top-5"류 표현을 "추천 Top-5"로 간소화, 라이브러리 섹션은 모든 모드에서 "📚 라이브러리 데모 — DL 과제 연장" 접이식 섹션으로 하위 배치(추천 Top-5가 먼저 나옴), 입력 방식 드롭다운 순서를 [음원 검색, 오디오 업로드, 텍스트로 찾기, 라이브러리 곡 선택]으로 재배열(라이브러리를 DL 과제 데모로 명확히 후순위 처리), 추천 결과 표시 옵션도 [전체, 추천만, 라이브러리 데모만]으로 리네이밍.
 - **테스트 80건 전체 통과**(preview_rank 8건 포함), 실제 화면에서 "음원 검색" 모드 검색→예측→CNN 재정렬→라이브러리 데모 접이식 섹션까지 전체 플로우 확인.
 - 향후 방향: DL(CNN 임베딩/코사인 유사도)과 LLM 기능이 따로 노는 것처럼 보이지 않게, 새 기능도 최대한 DL 결과를 재사용/연계하는 방향으로 진행할 것.
+- **데이터 100 TAR 전체로 확장 완료** — `MAX_TARS` 50→100. TAR 90 다운로드가 mirror 네트워크 오류로 실패해 55곡이 누락됐던 것을 사용자가 수동 다운로드/추출 후 `src/data/load_jamendo.py:build_subset()`으로 정확한 대상 55곡을 재계산해 이름 정리(`.low.mp3`→`.mp3`) + HF Hub 업로드로 복구. `artifacts/subset_meta.csv`·`melspec_manifest.csv`·`embeddings.npy` 전부 6,725행/100폴더로 일치 확인.
+- **100 TAR 전체로 재학습 완료** — val F1(micro) 0.3477, test F1(micro) 0.2227 / F1(macro) 0.1368 / Accuracy 0.1448 / ROC-AUC 0.7199. 50 TAR 체크포인트(test F1-micro 0.2618) 대비 test F1(micro)은 오히려 소폭 하락(0.2227) — 단순 CNN 용량 한계로 추정, 데이터 확대만으로 성능이 항상 개선되진 않음을 확인.
+- **제출 노트북 슬림화** — `submission/music_mood_recs.ipynb`에서 LLM 확장(§9, §9.1)·프로토타입 데모(§10)·보완사항(§11) 섹션 제거(30→19개 셀), "소감 및 후기"를 §9로 재번호. 노트북은 이제 순수 DL 파이프라인(데이터 수집→EDA→전처리→모델→학습→평가→시각화→예측)만 다룸. `src/llm/`·`src/recommend/preview_rank.py`·`app.py` 등 실제 소스/배포 앱은 전혀 변경 없음(테스트 80건 재확인 통과).
+- **git 히스토리 55개 → 2개 커밋으로 재압축**(`git commit-tree`로 작업 트리 안전하게 보존) — 1번째: DL 과제 제출본(~2026-06-30), 2번째: LLM 확장 전체(README 포함). force-push 완료, 이후 갱신은 2번째 커밋에 계속 amend.
 
 ## 남은 작업 (P0, LLM 과제 데드라인 2026-07-07 내 필수)
 
@@ -59,4 +63,4 @@
 | --- | --- |
 | CPU 학습 시간 | 6일 데드라인 내 단순 CNN만 |
 | 분류 임베딩 → 추천 재사용 가정 미검증 | 재학습 후 정성 평가 필요 |
-| 모델 성능 낮음(test F1-micro 0.2642) | 보고서에 "후속 개선점"으로 서술(CRNN 확장 등), 이번 제출에서는 시간상 스킵 |
+| 모델 성능 낮음(test F1-micro 0.2227, 100 TAR 전체 기준) | 보고서에 "후속 개선점"으로 서술(CRNN 확장 등), 이번 제출에서는 시간상 스킵 |
