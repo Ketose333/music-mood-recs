@@ -956,7 +956,7 @@ except Exception as exc:
     st.error(f"모델/데이터를 불러오지 못했습니다: {exc}")
     st.info(
         "데모 실행 순서:\n"
-        "1. `python scripts/download_audio.py --top-n 5 --max-tars 30`\n"
+        "1. `python scripts/download_audio.py --top-n 5 --max-tars 100`\n"
         "2. `python scripts/extract_melspecs.py`\n"
         "3. `python scripts/train_cnn.py`\n"
         "4. `python -m scripts.precompute_embeddings`\n"
@@ -1027,11 +1027,11 @@ _PROVIDER_LABEL = {
 @st.cache_data(ttl=3600, show_spinner=False)
 def _cached_real_tracks(
     mood: str, user_text: str, keywords: tuple[str, ...], _reroll: int = 0, artist_country: str | None = None,
-    exclude: tuple[tuple[str, str], ...] = (),
+    exclude: tuple[tuple[str, str], ...] = (), pool_k: int = 5,
 ):
     return recommend_real_tracks(
         mood, user_text=user_text, search_keywords=list(keywords) or None,
-        k=5, groq_api_key=GROQ_API_KEY, artist_country=artist_country, exclude=list(exclude),
+        k=pool_k, groq_api_key=GROQ_API_KEY, artist_country=artist_country, exclude=list(exclude),
     )
 
 
@@ -1074,11 +1074,19 @@ def _render_real_tracks(
     if col_reroll.button("🔀 다른 곡", key=f"reroll_btn::{reroll_key}", help="같은 무드로 다른 추천을 다시 받습니다"):
         reroll_n += 1
         st.session_state[reroll_key] = reroll_n
+    # query_embedding이 있는 모드(음원 검색/업로드/라이브러리)는 CNN 유사도가
+    # 실제로 후보를 "고르는" 역할까지 하도록 후보 풀을 5개보다 훨씬 크게
+    # 받는다. 무드(happy/energetic/... 5종)만으로 후보를 뽑으면 같은 무드로
+    # 분류된 서로 다른 곡들이 정확히 같은 5곡 풀을 공유하게 되고, 그 5개를
+    # 재정렬해봤자 표시되는 곡 자체는 그대로라 "항상 같은 추천"처럼 보였다.
+    # 12개를 받아 그중 CNN 임베딩 유사도가 가장 높은 5개만 추리면, 같은 무드
+    # 라도 실제 입력 곡에 따라 최종 Top-5가 달라진다.
+    pool_k = 12 if query_embedding is not None else 5
     with st.spinner("추천 곡 찾는 중... (LLM 추천 + iTunes 검증)"):
         try:
             real_tracks, provider = _cached_real_tracks(
                 mood, user_text, tuple(keywords or []), reroll_n,
-                artist_country=artist_country, exclude=tuple(already_shown),
+                artist_country=artist_country, exclude=tuple(already_shown), pool_k=pool_k,
             )
         except Exception:
             real_tracks, provider = [], "itunes"
@@ -1089,13 +1097,13 @@ def _render_real_tracks(
         st.info(msg)
         return
     st.session_state[seen_key] = already_shown + [(t.title, t.artist) for t in real_tracks]
-    ranked: list[tuple] = [(rt, None) for rt in real_tracks]
+    ranked: list[tuple] = [(rt, None) for rt in real_tracks[:5]]
     reranked = False
     if query_embedding is not None:
         with st.spinner("CNN 임베딩으로 무드 유사도 계산 중... (iTunes 30초 프리뷰 분석)"):
             preview_embs = [_cached_preview_embedding(rt.preview_url) for rt in real_tracks]
         sims = preview_similarities(query_embedding, preview_embs)
-        ranked = rerank_with_similarity(real_tracks, sims)
+        ranked = rerank_with_similarity(real_tracks, sims)[:5]
         reranked = any(s is not None for s in sims)
     provider_note = f"추천 경로: {_PROVIDER_LABEL.get(provider, provider)} · 곡 존재 여부는 iTunes 카탈로그로 검증됨"
     if reranked:
