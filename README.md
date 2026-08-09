@@ -4,7 +4,6 @@
 
 MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스펙트로그램 입력)으로 5개 무드 태그(happy/energetic/relaxing/film/dark)를 분류하고, 분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천한다. **LLM 확장**으로 자연어 무드 분석(Ollama → Groq → 키워드 휴리스틱 폴백)과 실제 발매 음원 Top-5 추천(iTunes 검증 + Spotify·YouTube Music·Apple Music 링크)을 지원한다. 머신러닝 수업 과제로 시작한 프로젝트이며, Streamlit Cloud에 배포되어 있다.
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://music-mood-recs.streamlit.app)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)
 ![scikit--learn](https://img.shields.io/badge/scikit--learn-F7931E?style=flat-square&logo=scikitlearn&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
@@ -28,9 +27,13 @@ MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스�
 13. [라이선스](#라이선스)
 14. [연락처](#연락처)
 
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 ## 배경
 
 음악 추천은 보통 협업 필터링(다른 사용자의 청취 기록)에 의존하지만, 신곡·롱테일 곡처럼 청취 기록이 적은 곡에는 콘텐츠 기반 접근이 보완책이 된다. 이 프로젝트는 머신러닝 수업 과제로 시작했으며, **오디오 신호 자체에서 추출한 멜스펙트로그램으로 무드를 분류**하고, 분류 모델이 학습한 임베딩을 그대로 재사용해 추천까지 보여주는 단일 모델·단일 데이터셋 파이프라인을 목표로 한다.
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 데이터
 
@@ -45,6 +48,8 @@ MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스�
 
 > 멀티레이블 태그 데이터셋이라, 한 곡이 여러 무드 태그를 동시에 가질 수 있다(BCEWithLogitsLoss 사용 이유).
 
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 ## 파이프라인
 
 ```
@@ -58,6 +63,8 @@ MTG-Jamendo 메타데이터
                       └─ app.py (Streamlit)  곡 선택 → 무드 예측/비교/EDA 탭 → 배포
 ```
 
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 ## 로드맵
 
 - [x] MTG-Jamendo 메타데이터 로드·상위 5 태그 서브셋 필터
@@ -69,7 +76,9 @@ MTG-Jamendo 메타데이터
 - [ ] CRNN 확장 (베이스라인 성능 낮을 시)
 - [ ] 추천 품질 정량 평가 지표 설계
 
-> 상세 항목·비고는 [기능](#기능) 표, 인프라·이슈는 [docs/STATUS.md](docs/STATUS.md) 참고.
+> 상세 항목·비고는 [기능](#기능) 표에서, 인프라 상태·다음 작업·알려진 이슈는 [진행 현황 문서](docs/STATUS.md)에서 계속 관리합니다.
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 모델 성능
 
@@ -78,6 +87,8 @@ MTG-Jamendo 메타데이터
 | **MoodCNN** | **0.3477** | 0.2227 | 0.1448 | 0.7199 | 단순 CNN(~28K params), 멜스펙트로그램 입력, CPU 학습 |
 
 > 성능 수치는 100 TAR 전체(6,725곡) 기준 **로컬/CPU 실측치**. 단순 CNN·CPU 제약으로 분류 성능 자체는 낮지만, ROC-AUC(0.7199)는 분류기로서 최소한의 변별력을 갖췄음을 보여준다. 데이터 규모가 50→100 TAR로 늘었다고 test F1(micro)이 항상 개선되지는 않았음(0.2618 → 0.2227) — 단순 CNN 용량 한계로 보이며, 후속 개선 방향(CRNN 확장 등)은 `docs/STATUS.md` 참고.
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 기능
 
@@ -100,6 +111,8 @@ MTG-Jamendo 메타데이터
 > 텍스트 무드 추정은 LLM이 담당한다(별도 NLP 모델 학습 없음): Ollama 로컬 LLM을 우선 시도하고, 없으면 Groq 무료 API(`GROQ_API_KEY` env/secrets), 그것도 없으면 기존 한국어 키워드 휴리스틱으로 폴백한다. 어느 경로든 결과는 같은 5개 학습 태그로 매핑되어 오디오 분류기의 무드 확률(`predict_mood_probs`)로 곡을 고르므로, DL 파이프라인은 그대로다. LLM 모듈은 태그 목록만 입력받아 데이터셋 규모(50/100 TAR)와 무관하게 동작한다.
 
 > 모델 성능 수치는 [모델 성능](#모델-성능) 참고.
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 디렉터리 구조
 
@@ -131,12 +144,16 @@ docs/
   prd-phase-2-llm-extension.md           Phase 2(LLM 확장: 자연어 무드 분석 + 실음원 추천) — Done
 ```
 
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 ## 로컬 환경 셋업
 
 ```bash
 git clone https://github.com/Ketose333/music-mood-recs.git && cd music-mood-recs
 pip install -r requirements.txt
 ```
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 모델 학습 (이미 학습된 아티팩트가 models/에 있으면 건너뛰어도 됨)
 
@@ -159,6 +176,8 @@ python scripts/compute_eda.py
 
 각 스크립트는 첫 실행 시 MTG-Jamendo 메타데이터/오디오를 `data/`에 자동 다운로드한다(`.gitignore` 처리됨, 매번 다시 받을 필요 없음).
 
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 ## 앱 실행
 
 ```bash
@@ -167,11 +186,15 @@ streamlit run app.py
 
 "🔍 예측" 탭에서 입력 방식(음원 검색 / 오디오 업로드 / 텍스트로 찾기 / 라이브러리 곡 선택)을 고르면 무드 예측 결과 + 비슷한 무드 추천 5곡(오디오 재생 포함). "📊 모델 성능" 탭에서 학습된 모델의 F1/Accuracy/ROC-AUC 확인.
 
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 ## 테스트
 
 ```bash
 python -m pytest tests/ -v
 ```
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 배포 (Streamlit Cloud)
 
@@ -182,11 +205,15 @@ python -m pytest tests/ -v
 5. **LLM 경로 활성화(선택)**: 앱 대시보드 **⋮ → Settings → Secrets**에 `GROQ_API_KEY = "..."` 등록(Streamlit Cloud에는 Ollama가 없어 Groq이 클라우드 LLM 경로). 미등록 시 텍스트 무드 분석은 키워드 휴리스틱, 실음원 추천은 iTunes 무드 검색으로 폴백되어 앱은 정상 동작한다
 6. 로컬 fallback이 필요하면 `streamlit run app.py`로 실행한다 (로컬에서는 Ollama가 떠 있으면 자동 사용 — 기본 모델 `gemma4:e2b`, `MMR_OLLAMA_MODEL`로 변경 가능)
 
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 ## 라이선스
 
 - 코드: MIT
 - 데이터: MTG-Jamendo — 메타데이터 CC BY-NC-SA 4.0, 오디오 개별 CC 라이선스, **비상업 연구용**
 - 모델 아티팩트: 본 프로젝트 산출물, 비상업 연구용
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 연락처
 
