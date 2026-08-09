@@ -223,7 +223,7 @@ python -m pytest tests/ -v
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 <!-- PORTFOLIO:FACTS:START -->
-- 기간: 2026.06.25 ~ 2026.07.04 (completed)
+- 기간: 2026.06.25 ~ 2026.07.04 (9일) (completed)
 - 현재 스택: Python, PyTorch, Librosa, Streamlit, Ollama, Groq
 - 현재 설명: CNN 무드 분류와 임베딩 추천을 결합한 Streamlit 앱
 - 저장소: https://github.com/Ketose333/music-mood-recs
