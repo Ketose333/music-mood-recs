@@ -1,3 +1,5 @@
+<a id="readme-top"></a>
+
 # music-mood-recs
 
 MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스펙트로그램 입력)으로 5개 무드 태그(happy/energetic/relaxing/film/dark)를 분류하고, 분류 과정에서 학습된 임베딩을 코사인 유사도로 재사용해 비슷한 무드의 곡을 추천한다. **LLM 확장**으로 자연어 무드 분석(Ollama → Groq → 키워드 휴리스틱 폴백)과 실제 발매 음원 Top-5 추천(iTunes 검증 + Spotify·YouTube Music·Apple Music 링크)을 지원한다. 머신러닝 수업 과제로 시작한 프로젝트이며, Streamlit Cloud에 배포되어 있다.
@@ -7,20 +9,24 @@ MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스�
 ![scikit--learn](https://img.shields.io/badge/scikit--learn-F7931E?style=flat-square&logo=scikitlearn&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
 
+[**라이브 데모 »**](https://music-mood-recs.streamlit.app)
+
 ## 목차
 
 1. [배경](#배경)
 2. [데이터](#데이터)
 3. [파이프라인](#파이프라인)
-4. [진행 현황](#진행-현황)
+4. [로드맵](#로드맵)
 5. [모델 성능](#모델-성능)
 6. [기능](#기능)
-7. [프로젝트 현황](#프로젝트-현황)
-8. [디렉터리 구조](#디렉터리-구조)
-9. [로컬 환경 셋업](#로컬-환경-셋업)
-10. [모델 학습](#모델-학습-이미-학습된-아티팩트가-models에-있으면-건너뛰어도-됨)
-11. [앱 실행](#앱-실행)
+7. [디렉터리 구조](#디렉터리-구조)
+8. [로컬 환경 셋업](#로컬-환경-셋업)
+9. [모델 학습](#모델-학습-이미-학습된-아티팩트가-models에-있으면-건너뛰어도-됨)
+10. [앱 실행](#앱-실행)
+11. [테스트](#테스트)
 12. [배포 (Streamlit Cloud)](#배포-streamlit-cloud)
+13. [라이선스](#라이선스)
+14. [연락처](#연락처)
 
 ## 배경
 
@@ -52,7 +58,7 @@ MTG-Jamendo 메타데이터
                       └─ app.py (Streamlit)  곡 선택 → 무드 예측/비교/EDA 탭 → 배포
 ```
 
-## 진행 현황
+## 로드맵
 
 - [x] MTG-Jamendo 메타데이터 로드·상위 5 태그 서브셋 필터
 - [x] 오디오 다운로드 + 멜스펙트로그램 추출 (100 TAR 전체, 6,725곡)
@@ -94,10 +100,6 @@ MTG-Jamendo 메타데이터
 > 텍스트 무드 추정은 LLM이 담당한다(별도 NLP 모델 학습 없음): Ollama 로컬 LLM을 우선 시도하고, 없으면 Groq 무료 API(`GROQ_API_KEY` env/secrets), 그것도 없으면 기존 한국어 키워드 휴리스틱으로 폴백한다. 어느 경로든 결과는 같은 5개 학습 태그로 매핑되어 오디오 분류기의 무드 확률(`predict_mood_probs`)로 곡을 고르므로, DL 파이프라인은 그대로다. LLM 모듈은 태그 목록만 입력받아 데이터셋 규모(50/100 TAR)와 무관하게 동작한다.
 
 > 모델 성능 수치는 [모델 성능](#모델-성능) 참고.
-
-## 프로젝트 현황
-
-→ **[docs/STATUS.md](docs/STATUS.md)** — 인프라 상태, 모델 학습 완료 여부, 다음 작업, 알려진 이슈를 추적하는 작업 로그.
 
 ## 디렉터리 구조
 
@@ -185,3 +187,10 @@ python -m pytest tests/ -v
 - 코드: MIT
 - 데이터: MTG-Jamendo — 메타데이터 CC BY-NC-SA 4.0, 오디오 개별 CC 라이선스, **비상업 연구용**
 - 모델 아티팩트: 본 프로젝트 산출물, 비상업 연구용
+
+## 연락처
+
+- GitHub: [Ketose333](https://github.com/Ketose333)
+- 문의: 이 저장소의 GitHub Issues
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
