@@ -10,6 +10,15 @@ MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스�
 
 [**라이브 데모 »**](https://music-mood-recs.streamlit.app)
 
+<!-- PORTFOLIO:FACTS:START -->
+- 기간: 2026.06.25 ~ 2026.07.04 (9일) (completed)
+- 현재 스택: Python, PyTorch, Librosa, Streamlit, Ollama, Groq
+- 현재 설명: CNN 무드 분류와 임베딩 추천을 결합한 Streamlit 앱
+- 저장소: https://github.com/Ketose333/music-mood-recs
+- 데모: https://music-mood-recs.streamlit.app
+- PDF: musicrecs.pdf
+<!-- PORTFOLIO:FACTS:END -->
+
 ## 목차
 
 1. [배경](#배경)
@@ -222,11 +231,3 @@ python -m pytest tests/ -v
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
-<!-- PORTFOLIO:FACTS:START -->
-- 기간: 2026.06.25 ~ 2026.07.04 (9일) (completed)
-- 현재 스택: Python, PyTorch, Librosa, Streamlit, Ollama, Groq
-- 현재 설명: CNN 무드 분류와 임베딩 추천을 결합한 Streamlit 앱
-- 저장소: https://github.com/Ketose333/music-mood-recs
-- 데모: https://music-mood-recs.streamlit.app
-- PDF: musicrecs.pdf
-<!-- PORTFOLIO:FACTS:END -->
