@@ -1,0 +1,32 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 앱에 핑 보내기
+        run: |
+          curl -sf --max-time 30 --retry 2 https://music-mood-recs.streamlit.app > /dev/null \
+            || echo "ping 실패 (일시적일 수 있음, 다음 주기에 재시도)"
+
+      - name: 오래된 실행 기록 정리 (최근 10개만 유지)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run list --workflow=keep_alive.yml --repo "${{ github.repository }}" \
+            --limit 100 --json databaseId --jq '.[10:][].databaseId' \
+          | while read -r id; do
+              gh run delete "$id" --repo "${{ github.repository }}" || true
+            done

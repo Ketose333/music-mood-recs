@@ -32,8 +32,9 @@ MTG-Jamendo 오디오 데이터 기반 음악 무드 분류 웹앱. CNN(멜스�
 10. [앱 실행](#앱-실행)
 11. [테스트](#테스트)
 12. [배포 (Streamlit Cloud)](#배포-streamlit-cloud)
-13. [라이선스](#라이선스)
-14. [연락처](#연락처)
+13. [상시 유지 (Keep-Alive)](#상시-유지-keep-alive)
+14. [라이선스](#라이선스)
+15. [연락처](#연락처)
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
@@ -212,6 +213,14 @@ python -m pytest tests/ -v
 4. Python 버전은 `runtime.txt`(3.11) 기준, 확실한 적용은 앱 대시보드 **⋮ → Settings → Python version**에서 재확인할 것
 5. **LLM 경로 활성화(선택)**: 앱 대시보드 **⋮ → Settings → Secrets**에 `GROQ_API_KEY = "..."` 등록(Streamlit Cloud에는 Ollama가 없어 Groq이 클라우드 LLM 경로). 미등록 시 텍스트 무드 분석은 키워드 휴리스틱, 실음원 추천은 iTunes 무드 검색으로 폴백되어 앱은 정상 동작한다
 6. 로컬 fallback이 필요하면 `streamlit run app.py`로 실행한다 (로컬에서는 Ollama가 떠 있으면 자동 사용 — 기본 모델 `gemma4:e2b`, `MMR_OLLAMA_MODEL`로 변경 가능)
+
+<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
+## 상시 유지 (Keep-Alive)
+
+Streamlit Community Cloud 무료 티어는 일정 기간 트래픽이 없으면 앱이 슬립 상태로 전환된다.
+`.github/workflows/keep_alive.yml`이 12시간마다 앱 URL에 핑을 보내 슬립을 방지하며,
+워크플로우 자신의 실행 기록도 최근 10개만 남기고 자동 정리해 무한정 쌓이지 않는다.
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
