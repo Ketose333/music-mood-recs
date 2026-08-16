@@ -32,7 +32,7 @@ Phase 0의 MoodCNN(오디오 무드 분류 + 임베딩 추천)은 그대로 유�
 
 | 항목 | 값 |
 | --- | --- |
-| LLM | Ollama 로컬(gemma4:e2b, 무료) → Groq 무료 API(llama-3.3-70b) → 키워드 휴리스틱 3단 폴백 |
+| LLM | Ollama 로컬(gemma4:e2b, 무료) → Groq 무료 API(openai/gpt-oss-120b) → 키워드 휴리스틱 3단 폴백 |
 | 음원 검증 | iTunes Search API (무료·키 불필요) |
 | 신규 코드 | `src/llm/mood_analyzer.py` · `src/llm/music_search.py` (기존 모듈 수정 없음) |
 | 제출 연동 | `sync_standalone_app.py` BLOCKS 추가, `make_notebook.py` §9 셀 추가 |

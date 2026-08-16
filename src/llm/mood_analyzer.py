@@ -26,7 +26,7 @@ OLLAMA_MODEL = os.environ.get("MMR_OLLAMA_MODEL", "gemma4:e2b")
 # model (~1min), so the Ollama tier gets a longer budget than the cloud tier.
 OLLAMA_TIMEOUT = int(os.environ.get("MMR_OLLAMA_TIMEOUT", "90"))
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = os.environ.get("MMR_GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.environ.get("MMR_GROQ_MODEL", "openai/gpt-oss-120b")
 LLM_TIMEOUT = 30
 
 

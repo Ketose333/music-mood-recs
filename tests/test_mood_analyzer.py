@@ -12,6 +12,31 @@ from src.llm import mood_analyzer as ma
 TAGS = ["happy", "energetic", "relaxing", "film", "dark"]
 
 
+class TestChatGroq:
+    def test_default_model_is_sent_in_http_payload(self, monkeypatch):
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": '{"mood": "happy"}'}}]}
+
+        def fake_post(url, *, headers, json, timeout):
+            captured.update(url=url, headers=headers, json=json, timeout=timeout)
+            return FakeResponse()
+
+        monkeypatch.setattr(ma.requests, "post", fake_post)
+
+        result = ma.chat_groq("기분이 좋아", "dummy-key-for-test")
+
+        assert result == '{"mood": "happy"}'
+        assert captured["url"] == ma.GROQ_API_URL
+        assert captured["json"]["model"] == "openai/gpt-oss-120b"
+        assert captured["json"]["response_format"] == {"type": "json_object"}
+
+
 class TestParseMoodResponse:
     def test_valid_json(self):
         raw = '{"mood": "dark", "confidence": 0.9, "reason": "우울함", "search_keywords": ["sad songs"]}'
