@@ -48,8 +48,17 @@ function assertPublicApp() {
   }
 }
 
+function safeUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return `${parsedUrl.origin}${parsedUrl.pathname}`;
+  } catch {
+    return 'Streamlit 앱 경로';
+  }
+}
+
 try {
-  console.log(`Streamlit 앱에 접속합니다: ${appUrl}`);
+  console.log(`Streamlit 앱에 접속합니다: ${safeUrl(appUrl)}`);
   const response = await page.goto(appUrl, {
     waitUntil: 'domcontentloaded',
     timeout: 60_000,
@@ -130,7 +139,7 @@ try {
     throw new Error('wake 시도 후에도 sleep 화면이 남아 있습니다.');
   }
 
-  console.log(`Streamlit 앱 로딩을 확인했습니다: ${page.url()}`);
+  console.log(`Streamlit 앱 로딩을 확인했습니다: ${safeUrl(page.url())}`);
 } catch (error) {
   console.error(`Keep-alive 실패: ${error.message}`);
   process.exitCode = 1;
