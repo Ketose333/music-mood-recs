@@ -1,0 +1,46 @@
+name: Auto Review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Node.js 문법 확인
+        run: node --check .github/scripts/keep_alive.mjs
+
+      - name: keep-alive 정책 확인
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/keep_alive.yml').read_text(encoding='utf-8')
+          assert "cron: '17 */6 * * *'" in workflow
+          assert 'contents: read' in workflow
+          assert 'timeout-minutes: 10' in workflow
+          assert 'gh run delete' not in workflow
+          assert '|| echo' not in workflow
+          print('keep-alive policy: PASS')
+          PY
+
+      - name: 추가 코드 시크릿 스캔
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          added_lines="$(git diff --unified=0 "origin/${BASE_REF}...HEAD" | grep '^+' | grep -v '^+++' || true)"
+          if printf '%s\n' "$added_lines" | grep -iE "(password|passwd|secret|token|api_key|apikey|access_key|private_key|sk-|ghp_|gho_|glpat-|AKIA|AIza)['\"]?[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}"; then
+            echo '하드코딩된 시크릿 후보를 발견했습니다.'
+            exit 1
+          fi
+
