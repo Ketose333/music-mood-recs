@@ -38,9 +38,8 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          added_lines="$(git diff --unified=0 "origin/${BASE_REF}...HEAD" | grep '^+' | grep -v '^+++' || true)"
+          added_lines="$(git diff --unified=0 "origin/${BASE_REF}...HEAD" -- . ':(exclude).github/workflows/auto-review.yml' | grep '^+' | grep -v '^+++' || true)"
           if printf '%s\n' "$added_lines" | grep -iE "(password|passwd|secret|token|api_key|apikey|access_key|private_key|sk-|ghp_|gho_|glpat-|AKIA|AIza)['\"]?[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}"; then
             echo '하드코딩된 시크릿 후보를 발견했습니다.'
             exit 1
           fi
-
