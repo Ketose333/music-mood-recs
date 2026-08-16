@@ -2,7 +2,7 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    - cron: '0 */12 * * *'
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -10,23 +10,30 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  actions: write
+  contents: read
 
 jobs:
-  ping:
+  wake-up:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: 앱에 핑 보내기
-        run: |
-          curl -sf --max-time 30 --retry 2 https://music-mood-recs.streamlit.app > /dev/null \
-            || echo "ping 실패 (일시적일 수 있음, 다음 주기에 재시도)"
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: 오래된 실행 기록 정리 (최근 10개만 유지)
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Playwright 설치
         run: |
-          gh run list --workflow=keep_alive.yml --repo "${{ github.repository }}" \
-            --limit 100 --json databaseId --jq '.[10:][].databaseId' \
-          | while read -r id; do
-              gh run delete "$id" --repo "${{ github.repository }}" || true
-            done
+          npm install --no-save --no-package-lock playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: 앱 방문 및 로딩 확인
+        env:
+          APP_URL: https://music-mood-recs.streamlit.app
+          APP_READY_TEXT: 음악 무드 분류 + 추천
+        run: node .github/scripts/keep_alive.mjs
