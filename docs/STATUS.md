@@ -14,7 +14,7 @@
 | 데이터 | MTG-Jamendo 무드/테마 서브셋, 100 TAR 전체(6,725곡). 로컬+HF Hub(`Ketose333/music-mood-recs-assets`) 동시 저장 |
 | Git 추적 정책 | git은 무거운 파일을 추적하지 않음(LFS 미사용, `.gitattributes` 삭제). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`·`models/cnn/model.pt`를 HF Hub에서 런타임 로드(`app.py` `_resolve()`) |
 | 보고서 생성 | `submission/보고서.pptx` 수동 관리 |
-| Streamlit keep-alive | Playwright Chromium으로 6시간마다 방문·wake·앱 본문 로딩 검증 (PR #6, #8). Public 앱의 auth bootstrap 경유 지원 |
+| Streamlit keep-alive | 공통 canonical Playwright로 6시간마다 방문·wake·앱 본문 로딩 검증 (PR #6, #8, #10). Public 앱 auth bootstrap 지원 |
 
 ## 데드라인
 
