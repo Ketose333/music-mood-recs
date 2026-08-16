@@ -1,6 +1,6 @@
 # music-mood-recs — 진행상황 (STATUS)
 
-마지막 갱신: 2026-07-04
+마지막 갱신: 2026-08-16
 
 이 문서는 music-mood-recs 프로젝트의 단일 진실 공급원(SSOT)이다. 제품 요구사항은 [`prd.md`](prd.md)를, 전체 워크스페이스 통합 상태는 `../career/docs/STATUS.md`를 참조한다.
 
@@ -14,15 +14,17 @@
 | 데이터 | MTG-Jamendo 무드/테마 서브셋, 100 TAR 전체(6,725곡). 로컬+HF Hub(`Ketose333/music-mood-recs-assets`) 동시 저장 |
 | Git 추적 정책 | git은 무거운 파일을 추적하지 않음(LFS 미사용, `.gitattributes` 삭제). `data/audio/`·`artifacts/melspecs/`·`artifacts/embeddings.npy`·`models/cnn/model.pt`를 HF Hub에서 런타임 로드(`app.py` `_resolve()`) |
 | 보고서 생성 | `submission/보고서.pptx` 수동 관리 |
+| Streamlit keep-alive | Playwright Chromium으로 6시간마다 방문·wake·앱 본문 로딩 검증 (PR #6). 현재 Public 전환 필요 |
 
 ## 데드라인
 
 - **2026-07-07 17:30 LLM 과제 제출 / 07-07 오전 발표.** 산출물: 보고서(PPT/PDF) + 소스(ipynb·py) + Streamlit Cloud 시연 → zip 1개 이메일 제출(ahnhg2000@gmail.com, 예: `홍길동_딥러닝_LLM프로젝트.zip`). 범위·요구사항은 [`prd-phase-2-llm-extension.md`](prd-phase-2-llm-extension.md) 참고.
 - ~~2026-07-01 09:00 DL 과제 발표·시연·제출~~ — 완료.
 
-## 현재 상태 (2026-07-04)
+## 현재 상태 (2026-08-16)
 
 - **Git LFS 완전 미사용** — `model.pt`를 HF Hub 자산 레포로 이전하고 `.gitattributes` 삭제, git 히스토리에서도 제거. 계정 LFS 예산 상태와 무관하게 clone 가능.
+- **Streamlit keep-alive 보강** — 단순 curl 거짓 성공을 제거하고 Chromium wake·앱 준비 문구·인증 리다이렉트를 검증. Community Cloud에서 앱을 Public으로 전환해야 실제 schedule이 성공함.
 - **LLM 확장(Phase 2) 완료** — `src/llm/mood_analyzer.py`(Ollama→Groq→키워드 3단 폴백), `src/llm/music_search.py`(iTunes 검증된 실음원 Top-5), `app.py` 예측 탭 3개 모드에 "실제 음원 Top-5" 추가.
 - **Ollama 모델 확정** — `gemma4:e2b` 채택(웜업 후 ~14초, `gemma2:latest` 대비 3배 빠름). 첫 로드 ~60초 대응을 위해 타임아웃 90초 분리.
 - **UX 버그 3건 수정** — 업로드 용량 초과 시 ×버튼 클릭 불가, 예측 결과 소실, 업로드 모드 재연산 방지. `submission/music_mood_recs.py`·`.ipynb` 재생성 완료.

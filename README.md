@@ -219,8 +219,9 @@ python -m pytest tests/ -v
 ## 상시 유지 (Keep-Alive)
 
 Streamlit Community Cloud 무료 티어는 일정 기간 트래픽이 없으면 앱이 슬립 상태로 전환된다.
-`.github/workflows/keep_alive.yml`이 12시간마다 앱 URL에 핑을 보내 슬립을 방지하며,
-워크플로우 자신의 실행 기록도 최근 10개만 남기고 자동 정리해 무한정 쌓이지 않는다.
+`.github/workflows/keep_alive.yml`이 6시간마다 GitHub-hosted Chromium으로 앱을 방문하고,
+슬립 화면이면 깨우기 버튼을 누른 뒤 앱 본문 로딩까지 검증한다. 앱은 Streamlit Community Cloud에서
+**Public**이어야 하며, 인증 리다이렉트나 로딩 실패는 성공으로 숨기지 않고 Actions 실패로 기록한다.
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
@@ -238,4 +239,3 @@ Streamlit Community Cloud 무료 티어는 일정 기간 트래픽이 없으면 
 - 문의: 이 저장소의 GitHub Issues
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
-
