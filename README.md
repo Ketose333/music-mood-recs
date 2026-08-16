@@ -117,7 +117,7 @@ MTG-Jamendo 메타데이터
 | 클라우드 메모리 최적화 | ✅ | 임베딩 사전계산(`artifacts/embeddings.npy`) + 멜스펙 지연 로딩 (무료 티어 1GB OOM 방지) |
 | Streamlit Cloud 배포 | ✅ | Python 3.11 고정 필요 (아래 "배포" 참고) |
 
-> 텍스트 무드 추정은 LLM이 담당한다(별도 NLP 모델 학습 없음): Ollama 로컬 LLM을 우선 시도하고, 없으면 Groq 무료 API(`GROQ_API_KEY` env/secrets), 그것도 없으면 기존 한국어 키워드 휴리스틱으로 폴백한다. 어느 경로든 결과는 같은 5개 학습 태그로 매핑되어 오디오 분류기의 무드 확률(`predict_mood_probs`)로 곡을 고르므로, DL 파이프라인은 그대로다. LLM 모듈은 태그 목록만 입력받아 데이터셋 규모(50/100 TAR)와 무관하게 동작한다.
+> 텍스트 무드 추정은 LLM이 담당한다(별도 NLP 모델 학습 없음): Ollama 로컬 LLM을 우선 시도하고, 없으면 Groq의 `openai/gpt-oss-120b`(`GROQ_API_KEY` env/secrets), 그것도 없으면 기존 한국어 키워드 휴리스틱으로 폴백한다. 어느 경로든 결과는 같은 5개 학습 태그로 매핑되어 오디오 분류기의 무드 확률(`predict_mood_probs`)로 곡을 고르므로, DL 파이프라인은 그대로다. LLM 모듈은 태그 목록만 입력받아 데이터셋 규모(50/100 TAR)와 무관하게 동작한다.
 
 > 모델 성능 수치는 [모델 성능](#모델-성능) 참고.
 
