@@ -23,6 +23,7 @@
 
 ## 현재 상태 (2026-08-16)
 
+- **Groq 종료 모델 교체 완료(PR #12)** — `llama-3.3-70b-versatile` 기본값을 `openai/gpt-oss-120b`로 교체. 모듈·Streamlit 단일 배포본을 동기화하고 JSON Object Mode 실호출 및 81개 테스트 통과.
 - **Git LFS 완전 미사용** — `model.pt`를 HF Hub 자산 레포로 이전하고 `.gitattributes` 삭제, git 히스토리에서도 제거. 계정 LFS 예산 상태와 무관하게 clone 가능.
 - **Streamlit keep-alive 보강** — 단순 curl 거짓 성공을 제거하고 Chromium wake·앱 준비 문구를 검증. Public 앱도 거치는 중간 auth bootstrap은 허용하고, 최종 인증 화면에 머문 경우만 실패하도록 오탐 수정.
 - **LLM 확장(Phase 2) 완료** — `src/llm/mood_analyzer.py`(Ollama→Groq→키워드 3단 폴백), `src/llm/music_search.py`(iTunes 검증된 실음원 Top-5), `app.py` 예측 탭 3개 모드에 "실제 음원 Top-5" 추가.
