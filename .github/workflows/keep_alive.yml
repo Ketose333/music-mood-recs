@@ -25,11 +25,11 @@ jobs:
       - name: Node.js 설정
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Playwright 설치
         run: |
-          npm install --no-save --no-package-lock playwright@1.55.0
+          npm install --no-save --no-package-lock playwright@1.62.1
           npx playwright install --with-deps chromium
 
       - name: 앱 방문 및 로딩 확인

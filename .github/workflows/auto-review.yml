@@ -30,6 +30,11 @@ jobs:
           assert "cron: '17 */6 * * *'" in workflow
           assert 'contents: read' in workflow
           assert 'timeout-minutes: 10' in workflow
+          assert "node-version: '22'" in workflow
+          assert 'playwright@1.62.1' in workflow
+          assert 'APP_URL:' in workflow
+          assert 'APP_READY_TEXT:' in workflow
+          assert 'node .github/scripts/keep_alive.mjs' in workflow
           assert 'gh run delete' not in workflow
           assert '|| echo' not in workflow
           print('keep-alive policy: PASS')
