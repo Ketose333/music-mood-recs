@@ -29,14 +29,19 @@ function safeErrorMessage(error) {
   });
 }
 
+function isAuthUrl(url) {
+  return (
+    (url.hostname.toLowerCase() === 'share.streamlit.io' &&
+      url.pathname.includes('/auth/')) ||
+    (url.hostname.toLowerCase() === targetHostname &&
+      url.pathname.startsWith('/-/login'))
+  );
+}
+
 function assertFinalUrl(page) {
   const currentUrl = new URL(page.url());
-  const isAuthPage =
-    (currentUrl.hostname === 'share.streamlit.io' &&
-      currentUrl.pathname.includes('/auth/')) ||
-    currentUrl.pathname.startsWith('/-/login');
 
-  if (isAuthPage) {
+  if (isAuthUrl(currentUrl)) {
     throw new Error(
       `Streamlit 인증 페이지로 이동했습니다: ${safeUrl(currentUrl)}\n` +
         'keep-alive를 실행하려면 Streamlit Community Cloud에서 앱을 Public으로 설정해야 합니다.',
@@ -46,6 +51,23 @@ function assertFinalUrl(page) {
   if (currentUrl.hostname.toLowerCase() !== targetHostname) {
     throw new Error(`대상 앱이 아닌 호스트로 이동했습니다: ${safeUrl(currentUrl)}`);
   }
+}
+
+async function waitForPublicAppBootstrap(page) {
+  const deadline = Date.now() + 15_000;
+
+  while (Date.now() < deadline) {
+    const currentUrl = new URL(page.url());
+
+    if (!isAuthUrl(currentUrl)) {
+      assertFinalUrl(page);
+      return;
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  assertFinalUrl(page);
 }
 
 let browser;
@@ -59,6 +81,7 @@ try {
     waitUntil: 'domcontentloaded',
     timeout: 60_000,
   });
+  await waitForPublicAppBootstrap(page);
 
   const appFrame = page.frameLocator('iframe[title="streamlitApp"]');
   const topLevelContainer = page.locator('[data-testid="stAppViewContainer"]').first();
@@ -104,6 +127,7 @@ try {
   }
 
   while (Date.now() < deadline) {
+    assertFinalUrl(page);
     readyMode = await detectReadyMode();
 
     if (readyMode) {
@@ -117,6 +141,7 @@ try {
       if (wakeControl) {
         wakeClicked = true;
         console.log('sleep 화면을 감지해 wake 컨트롤을 클릭합니다.');
+        assertFinalUrl(page);
         await wakeControl.click();
       }
     }
